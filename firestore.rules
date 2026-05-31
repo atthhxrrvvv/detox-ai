@@ -1,0 +1,60 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isCreator() {
+      return signedIn() && request.auth.token.email == "cosmiceternal9481@gmail.com";
+    }
+
+    match /users/{uid} {
+      allow read, update: if signedIn() && (request.auth.uid == uid || isCreator());
+      allow create: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /chats/{chatId} {
+      allow read, update, delete: if signedIn() && (resource.data.userId == request.auth.uid || isCreator());
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+    }
+
+    match /messages/{messageId} {
+      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isCreator());
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isCreator();
+    }
+
+    match /payments/{paymentId} {
+      allow read, create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow read, update: if isCreator();
+    }
+
+    match /reports/{reportId} {
+      allow create: if signedIn();
+      allow read, update: if isCreator();
+    }
+
+    match /plans/{planId} {
+      allow read: if true;
+      allow write: if isCreator();
+    }
+
+    match /models/{modelId} {
+      allow read: if true;
+      allow write: if isCreator();
+    }
+
+    match /admin_logs/{logId} {
+      allow read, create: if isCreator();
+      allow update, delete: if false;
+    }
+
+    match /app_settings/{settingId} {
+      allow read: if true;
+      allow write: if isCreator();
+    }
+  }
+}
+
