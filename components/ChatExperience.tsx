@@ -32,7 +32,7 @@ import {
   X,
 } from "lucide-react";
 import { onAuthStateChanged, signOut, type User } from "firebase/auth";
-import { doc, increment, serverTimestamp, setDoc } from "firebase/firestore";
+import { doc, getDoc, increment, serverTimestamp, setDoc } from "firebase/firestore";
 import { AppLogo } from "@/components/AppLogo";
 import { CREATOR_EMAIL } from "@/lib/constants";
 import { auth, db } from "@/lib/firebase";
@@ -240,10 +240,30 @@ export function ChatExperience() {
   }, [threads]);
 
   useEffect(() => {
-    return onAuthStateChanged(auth, (user) => {
+    let isMounted = true;
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!isMounted) return;
       setCurrentUser(user);
       setIsAuthReady(true);
+
+      if (!user) return;
+
+      try {
+        const snapshot = await getDoc(doc(db, "users", user.uid));
+        const defaultModel = snapshot.data()?.defaultModel;
+        if (isMounted && typeof defaultModel === "string" && DETOX_MODELS.some((model) => model.id === defaultModel && model.enabled)) {
+          setSelectedModel(defaultModel);
+        }
+      } catch {
+        // Profile preferences are optional; chat still works with the local default.
+      }
     });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {

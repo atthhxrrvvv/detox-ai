@@ -2,13 +2,16 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import {
+  browserLocalPersistence,
   createUserWithEmailAndPassword,
   type User,
   GoogleAuthProvider,
+  onAuthStateChanged,
   signInWithEmailAndPassword,
   signInWithPopup,
+  setPersistence,
   updateProfile,
 } from "firebase/auth";
 import { doc, serverTimestamp, setDoc } from "firebase/firestore";
@@ -25,6 +28,15 @@ export function AuthPanel({ mode }: { mode: "login" | "signup" }) {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
+  useEffect(() => {
+    return onAuthStateChanged(auth, (user) => {
+      if (user) {
+        router.replace("/chat");
+        router.refresh();
+      }
+    });
+  }, [router]);
+
   function getFriendlyError(errorValue: unknown) {
     const message = errorValue instanceof Error ? errorValue.message : "Authentication failed.";
 
@@ -35,6 +47,14 @@ export function AuthPanel({ mode }: { mode: "login" | "signup" }) {
     if (message.includes("auth/unauthorized-domain")) return "Add this domain in Firebase Authentication settings.";
 
     return message.replace("Firebase: ", "");
+  }
+
+  async function keepLoginStored() {
+    try {
+      await setPersistence(auth, browserLocalPersistence);
+    } catch (persistenceError) {
+      console.warn("Firebase Auth local persistence could not be enabled.", persistenceError);
+    }
   }
 
   async function syncUserProfile(user: User) {
@@ -59,7 +79,11 @@ export function AuthPanel({ mode }: { mode: "login" | "signup" }) {
   }
 
   async function finishAuth(user: User) {
-    await syncUserProfile(user);
+    try {
+      await syncUserProfile(user);
+    } catch (profileError) {
+      console.warn("Firebase Auth succeeded, but the Firestore profile sync was blocked.", profileError);
+    }
     router.push("/chat");
     router.refresh();
   }
@@ -69,6 +93,7 @@ export function AuthPanel({ mode }: { mode: "login" | "signup" }) {
     setIsLoading(true);
 
     try {
+      await keepLoginStored();
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
       const credential = await signInWithPopup(auth, provider);
@@ -86,6 +111,7 @@ export function AuthPanel({ mode }: { mode: "login" | "signup" }) {
     setIsLoading(true);
 
     try {
+      await keepLoginStored();
       let authUser: User;
       if (isLogin) {
         const credential = await signInWithEmailAndPassword(auth, email, password);

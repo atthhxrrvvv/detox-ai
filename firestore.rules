@@ -27,7 +27,8 @@ service cloud.firestore {
     }
 
     match /payments/{paymentId} {
-      allow read, create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
       allow read, update: if isCreator();
     }
 
@@ -57,4 +58,3 @@ service cloud.firestore {
     }
   }
 }
-

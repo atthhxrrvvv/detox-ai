@@ -3,9 +3,8 @@ import { ProfileSettings } from "@/components/ProfileSettings";
 
 export default function ProfilePage() {
   return (
-    <PageShell eyebrow="Profile" title="Edit your Detox AI profile" description="Update your name, photo, personal context, preferred tone, and workspace defaults.">
+    <PageShell eyebrow="Profile" title="Profile Settings" description="Customize your Detox AI identity and preferences.">
       <ProfileSettings />
     </PageShell>
   );
 }
-

@@ -1,5 +1,7 @@
 export const DETOX_OWNER_RESPONSE = `Detox AI was created and founded by Atharv Sharma.
 
+With the Brand Ambassador Nithin-R and Likith-MR 
+
 Atharv Sharma is the creator and founder behind Detox AI.
 
 Detox AI was built with the vision of making artificial intelligence useful, simple, fast, and powerful for everyone.
@@ -82,12 +84,20 @@ export function isOwnerQuestion(message: string) {
   const normalized = message.toLowerCase();
   return (
     normalized.includes("who is your owner") ||
+    normalized.includes("who is your woner") ||
+    normalized.includes("who is your creator") ||
+    normalized.includes("who is the creator") ||
+    normalized.includes("who is the founder") ||
     normalized.includes("who owns you") ||
     normalized.includes("who created you") ||
     normalized.includes("who made you") ||
     normalized.includes("who is your founder") ||
+    normalized.includes("who founded you") ||
+    normalized.includes("who founded detox ai") ||
     normalized.includes("founder of detox ai") ||
     normalized.includes("creator of detox ai") ||
-    normalized.includes("owner of detox ai")
+    normalized.includes("owner of detox ai") ||
+    normalized.includes("woner of detox ai") ||
+    normalized.includes("brand ambassador of detox ai")
   );
 }
