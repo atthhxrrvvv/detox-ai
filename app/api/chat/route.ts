@@ -7,32 +7,24 @@ import { verifyFirebaseIdToken } from "@/lib/serverAuth";
 import { DETOX_OWNER_RESPONSE, isOwnerQuestion } from "@/lib/ownerResponse";
 import { db } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
-import { runtimeMaintenance, runtimeUsers } from "@/lib/adminRuntimeState";
 
 async function getAppControlState() {
   try {
     const snapshot = await getDoc(doc(db, "app_settings", "global"));
     const data = snapshot.data() as { maintenanceMode?: boolean; maintenanceMessage?: string } | undefined;
-    if (runtimeMaintenance.maintenanceMode) return runtimeMaintenance;
     return {
       maintenanceMode: Boolean(data?.maintenanceMode),
       maintenanceMessage: data?.maintenanceMessage || "Detox AI is in maintenance mode.",
     };
   } catch {
-    return runtimeMaintenance;
+    return {
+      maintenanceMode: false,
+      maintenanceMessage: "Detox AI is in maintenance mode.",
+    };
   }
 }
 
 async function getUserBlockState(uid: string) {
-  const runtimeState = runtimeUsers.get(uid);
-  if (runtimeState) {
-    return {
-      isBanned: Boolean(runtimeState.isBanned),
-      blockedPermanently: Boolean(runtimeState.blockedPermanently),
-      plan: runtimeState.plan,
-    };
-  }
-
   try {
     const snapshot = await getDoc(doc(db, "users", uid));
     const data = snapshot.data() as { isBanned?: boolean; blockedPermanently?: boolean; plan?: string } | undefined;
@@ -63,6 +55,7 @@ export async function POST(request: Request) {
     const researchMode = Boolean(body.researchMode);
     const rawTemperature = Number(body.temperature ?? 0.7);
     const temperature = Math.min(2, Math.max(0.5, Number.isFinite(rawTemperature) ? rawTemperature : 0.7));
+    const modelTemperature = Math.min(1.5, temperature);
     const history = Array.isArray(body.history)
       ? (body.history
           .filter((item: DetoxChatEngineMessage) => item?.role && item?.content)
@@ -127,7 +120,7 @@ export async function POST(request: Request) {
       ? `${message}\n\nResearch mode is on. Give a more careful, source-aware answer. If the answer depends on live web data, clearly say that live browsing is not connected in this Detox AI build and explain what should be verified.`
       : message;
 
-    const reply = await generateMistralReply(modelId, effectiveMessage, history, temperature);
+    const reply = await generateMistralReply(modelId, effectiveMessage, history, modelTemperature);
 
     return Response.json({
       reply: reply.content,
@@ -135,6 +128,7 @@ export async function POST(request: Request) {
       detoxModel: model.displayName,
       tokensUsed: reply.tokensUsed,
       temperature,
+      modelTemperature,
       saved: false,
     });
   } catch (error) {

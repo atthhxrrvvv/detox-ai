@@ -164,7 +164,7 @@ export function ManualPaymentForm({ initialPlan = "pro" }: { initialPlan?: strin
             {[
               "Pay with PhonePe, Google Pay, Paytm, BHIM, or any UPI app.",
               "Do not share UPI PIN, OTP, card details, or bank passwords.",
-              "Your plan activates only after creator approval.",
+              "Your plan activates only after manual payment verification.",
             ].map((item) => (
               <div key={item} className="flex gap-3 rounded-2xl border border-white/10 bg-black/20 p-3">
                 <CheckCircle2 className="mt-0.5 shrink-0 text-cyan-200" size={16} />
@@ -193,7 +193,7 @@ export function ManualPaymentForm({ initialPlan = "pro" }: { initialPlan?: strin
           </div>
         ) : !user ? (
           <div className="mt-6 rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-50">
-            Login first so the creator can activate the subscription on the correct account.
+            Login first so the subscription can be linked to the correct account.
             <Link href="/login" className="mt-3 inline-flex h-10 items-center rounded-xl bg-white px-4 font-semibold text-slate-950">
               Login to continue
             </Link>
@@ -280,7 +280,7 @@ export function ManualPaymentForm({ initialPlan = "pro" }: { initialPlan?: strin
         </label>
 
         <label className="mt-4 block text-sm text-slate-300" htmlFor="note">
-          Note for creator
+          Payment note
         </label>
         <textarea
           id="note"
@@ -307,7 +307,7 @@ export function ManualPaymentForm({ initialPlan = "pro" }: { initialPlan?: strin
 
         <p className="mt-4 text-xs leading-5 text-slate-500">
           By submitting, you confirm that the screenshot is yours and you agree that Detox AI may store it for payment verification,
-          creator review, audit logs, and support.
+          payment history, and support.
         </p>
       </form>
     </div>

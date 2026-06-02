@@ -28,10 +28,11 @@ export async function generateMistralReply(
   }
 
   const client = new Mistral({ apiKey: process.env.MISTRAL_API_KEY });
+  const safeTemperature = Math.min(1.5, Math.max(0.5, temperature));
   const response = await client.chat.complete({
     model: model.backendModel,
     maxTokens: model.maxTokens,
-    temperature,
+    temperature: safeTemperature,
     messages: [
       { role: "system", content: SYSTEM_PROMPTS[model.id] },
       ...history.slice(-12).map((message) => ({

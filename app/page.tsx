@@ -7,7 +7,6 @@ import {
   Crown,
   Gauge,
   Layers3,
-  LockKeyhole,
   PenLine,
   ShieldCheck,
   Sparkles,
@@ -15,6 +14,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { AppLogo } from "@/components/AppLogo";
+import { AuthRedirect } from "@/components/AuthRedirect";
 import { Footer } from "@/components/Footer";
 import { Hero3DBackground } from "@/components/Hero3DBackground";
 import { ModelCard } from "@/components/ModelCard";
@@ -25,7 +25,7 @@ import { DETOX_MODELS } from "@/lib/models";
 const heroStats = [
   ["11+", "task models"],
   ["0.50-2.00", "thinking control"],
-  ["Creator", "command nexus"],
+  ["Private", "AI workspace"],
 ] as const;
 
 const featureBands = [
@@ -34,14 +34,14 @@ const featureBands = [
   ["Code builder", "Orion and Titan help plan, debug, and structure serious builds.", TerminalSquare],
   ["Writing studio", "Echo and Lyra polish emails, captions, scripts, and long-form content.", PenLine],
   ["Creative engine", "Spark and Prism generate ideas, design systems, and brand direction.", Wand2],
-  ["Creator security", "Hidden admin, maintenance mode, user controls, logs, and privacy rules.", LockKeyhole],
+  ["Reliable workspace", "A clean account, chat, tools, pricing, and profile experience focused on users.", ShieldCheck],
 ] as const;
 
 const workflow = [
   ["Choose", "Pick a Detox model built for the task."],
   ["Tune", "Set response temperature from calm to extreme thinking."],
   ["Create", "Chat, code, study, write, plan, and save work."],
-  ["Control", "Creator dashboard manages users, models, payments, and safety."],
+  ["Continue", "Return to your workspace whenever you need focused help."],
 ] as const;
 
 export default function Home() {
@@ -49,6 +49,7 @@ export default function Home() {
 
   return (
     <>
+      <AuthRedirect />
       <SiteNav />
       <main>
         <section className="premium-hero relative isolate overflow-hidden px-4 sm:px-6">
@@ -68,7 +69,7 @@ export default function Home() {
                   Meet Detox AI
                 </h1>
                 <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-300 sm:text-xl">
-                  A futuristic AI command workspace for chatting, coding, studying, writing, building, and controlling your creator-powered platform.
+                  A futuristic AI command workspace for chatting, coding, studying, writing, building, and getting focused help in one place.
                 </p>
                 <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                   <Link href="/login" className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-white px-6 text-sm font-semibold text-slate-950 shadow-[0_0_55px_rgba(255,255,255,0.12)] transition hover:bg-cyan-100">
@@ -114,10 +115,10 @@ export default function Home() {
 
                   <div className="mt-5 grid gap-3">
                     <div className="ml-auto max-w-[84%] rounded-2xl bg-cyan-300 px-4 py-3 text-sm text-slate-950">
-                      Plan a premium AI app with payments, models, and creator controls.
+                      Plan a premium AI app with payments, models, and a polished user experience.
                     </div>
                     <div className="max-w-[92%] rounded-2xl border border-white/10 bg-white/8 px-4 py-3 text-sm leading-6 text-slate-200">
-                      I will map the product, access checks, Firestore data, UPI approval flow, AI tools, admin safety, and mobile-first interface.
+                      I will map the product, access checks, Firestore data, UPI flow, AI tools, and mobile-first interface.
                     </div>
                   </div>
 
@@ -132,7 +133,7 @@ temperature.set(1.35)
 workspace.build({
   chat: "premium",
   tools: "active",
-  creatorPanel: "secured"
+  privacy: "focused"
 })`}</code>
                     </pre>
                   </div>
@@ -212,15 +213,15 @@ workspace.build({
                   <Crown size={21} />
                 </span>
                 <div>
-                  <p className="text-sm uppercase tracking-[0.22em] text-amber-100">Creator Nexus</p>
-                  <h2 className="text-2xl font-semibold text-white">Built for founder control</h2>
+                  <p className="text-sm uppercase tracking-[0.22em] text-amber-100">Workspace Focus</p>
+                  <h2 className="text-2xl font-semibold text-white">Built for everyday AI work</h2>
                 </div>
               </div>
               <p className="mt-5 text-sm leading-7 text-slate-400">
-                Manage users, maintenance, payments, plans, model access, safety logs, and hidden admin access from one secured control surface.
+                Move between chat, tools, model selection, payment requests, profile settings, and saved local history in one user workspace.
               </p>
               <div className="mt-6 grid gap-3">
-                {["Memory-only admin session", "Maintenance mode protection", "Ban, unban, permanent block", "Real Firestore stats"].map((item) => (
+                {["Fast chat workspace", "Model access by plan", "Manual payment requests", "Profile and data controls"].map((item) => (
                   <div key={item} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-slate-300">
                     <ShieldCheck size={16} className="text-cyan-100" />
                     {item}
@@ -249,7 +250,7 @@ workspace.build({
               <div className="mt-5 rounded-2xl border border-white/10 bg-[#020713]/80 p-4">
                 <p className="text-sm font-semibold text-white">Detox AI workspace pulse</p>
                 <div className="mt-4 grid gap-3">
-                  {["Model access", "Prompt enhancer", "Creator safety", "Mobile chat"].map((item, index) => (
+                  {["Model access", "Prompt enhancer", "Saved chats", "Mobile chat"].map((item, index) => (
                     <div key={item}>
                       <div className="mb-1 flex items-center justify-between text-xs text-slate-400">
                         <span>{item}</span>

@@ -68,7 +68,6 @@ export function AuthPanel({ mode }: { mode: "login" | "signup" }) {
         role: user.email === CREATOR_EMAIL ? "creator" : "free",
         plan: user.email === CREATOR_EMAIL ? "creator" : "free",
         isCreator: user.email === CREATOR_EMAIL,
-        isAdmin: user.email === CREATOR_EMAIL,
         isBanned: false,
         blockedPermanently: false,
         lastLogin: serverTimestamp(),

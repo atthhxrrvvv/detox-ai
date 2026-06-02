@@ -4,7 +4,7 @@ import { CREATOR_EMAIL } from "@/lib/constants";
 const refundItems = [
   {
     title: "Manual Review First",
-    body: "Manual UPI payments are checked by the creator before any subscription is activated. Pending requests do not unlock paid models until approved.",
+    body: "Manual UPI payments are checked before any subscription is activated. Pending requests do not unlock paid models until approved.",
   },
   {
     title: "Rejected Requests",
@@ -16,7 +16,7 @@ const refundItems = [
   },
   {
     title: "Processing Time",
-    body: "Manual review and refund handling may take time because the creator must verify payment records and account status.",
+    body: "Manual review and refund handling may take time because payment records and account status must be verified.",
   },
   {
     title: "No Sensitive Banking Data",
@@ -33,7 +33,7 @@ export default function RefundPage() {
     <PageShell
       eyebrow="Refund"
       title="Refund policy"
-      description="Manual UPI payment requests, rejected verifications, refunds, and subscription activation are handled through creator review."
+      description="Manual UPI payment requests, rejected verifications, refunds, and subscription activation are handled through payment review."
     >
       <div className="grid gap-4 md:grid-cols-2">
         {refundItems.map((item) => (

@@ -58,12 +58,6 @@ Some advanced models are made for Pro and Premium users.
 
 The Premium models are planned for more powerful tasks, multitasking, advanced coding, and large project planning.
 
-Detox AI also includes a creator system where the founder can manage users, plans, models, limits, payments, and app settings.
-
-This helps keep the platform organized, controlled, and ready to grow.
-
-The creator dashboard is made only for the founder and authorized access.
-
 Detox AI is created with a focus on quality, speed, safety, and usefulness.
 
 It is built to help people save time and think better.

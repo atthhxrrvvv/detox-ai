@@ -48,8 +48,8 @@ service cloud.firestore {
     }
 
     match /admin_logs/{logId} {
-      allow read, create: if isCreator();
-      allow update, delete: if false;
+      allow read, create, update: if isCreator();
+      allow delete: if false;
     }
 
     match /app_settings/{settingId} {

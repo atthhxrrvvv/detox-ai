@@ -6,7 +6,6 @@ const navItems = [
   { href: "/chat", label: "Chat" },
   { href: "/tools", label: "Tools" },
   { href: "/pricing", label: "Pricing" },
-  { href: "/creator", label: "Creator" },
 ];
 
 export function SiteNav() {

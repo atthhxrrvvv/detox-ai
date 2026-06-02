@@ -23,7 +23,7 @@ const privacySections = [
     title: "3. How We Use Information",
     body: [
       "We use information to create accounts, authenticate users, provide AI responses, save chat history, manage plans, apply usage limits, process payment verification, activate paid plans, improve features, fix bugs, prevent abuse, and provide support.",
-      "We use payment screenshots only for payment verification, creator review, support, fraud prevention, and audit records.",
+      "We use payment screenshots only for payment verification, support, fraud prevention, and payment history.",
     ],
   },
   {
@@ -34,17 +34,16 @@ const privacySections = [
     ],
   },
   {
-    title: "5. Creator and Admin Access",
+    title: "5. Support and Safety",
     body: [
-      "Detox AI includes creator/admin tools for platform management, safety, support, moderation, plan control, payment approval, and system maintenance.",
-      "Authorized creator/admin accounts may review limited user information and chats only for safety, moderation, abuse prevention, support requests, payment verification, bug investigation, legal or policy compliance, and service improvement.",
-      "Chat inspection should not be used for unnecessary personal viewing. Creator/admin actions may be logged for security and accountability.",
+      "Detox AI includes a creator dashboard for the founder account only. Support and safety checks are handled only when needed for payment verification, abuse prevention, bug investigation, legal compliance, or user support.",
+      "Authorized creator access may review limited account, payment, report, and chat metadata only for safety, moderation, support, legal compliance, or service improvement. Chat content should not be reviewed for unnecessary personal viewing.",
     ],
   },
   {
     title: "6. Payment Verification",
     body: [
-      `Manual UPI payments are sent to ${CREATOR_UPI_ID}. Users must upload a transaction screenshot and enter a transaction ID so the creator can review the request.`,
+      `Manual UPI payments are sent to ${CREATOR_UPI_ID}. Users must upload a transaction screenshot and enter a transaction ID so the payment can be verified.`,
       "Detox AI will never ask for UPI PIN, OTP, bank password, card PIN, net banking password, or full card details. If anyone asks for these pretending to be Detox AI, do not share them.",
     ],
   },
@@ -58,7 +57,7 @@ const privacySections = [
   {
     title: "8. Data Storage and Security",
     body: [
-      "We use reasonable measures such as authentication, database rules, server-side API key storage, role-based access control, creator/admin checks, payment verification controls, and usage monitoring.",
+      "We use reasonable measures such as authentication, database rules, server-side API key storage, payment verification controls, and usage monitoring.",
       "No online platform can guarantee perfect security. Users should protect their login details and avoid sharing sensitive information in chats.",
     ],
   },

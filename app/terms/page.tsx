@@ -13,7 +13,7 @@ const termsSections = [
     title: "2. Acceptance of Terms",
     body: [
       "By accessing or using Detox AI, you agree to these Terms and Conditions and to the Privacy Policy. If you do not agree, please do not use Detox AI.",
-      "You agree to use Detox AI responsibly, legally, and without misusing the platform, AI features, payment system, creator tools, or user accounts.",
+      "You agree to use Detox AI responsibly, legally, and without misusing the platform, AI features, payment system, or user accounts.",
       "If you use Detox AI on behalf of another person, business, school, or organization, you confirm that you have permission to do so.",
     ],
   },
@@ -55,10 +55,10 @@ const termsSections = [
     ],
   },
   {
-    title: "8. Creator Access",
+    title: "8. Owner Contact",
     body: [
-      "Creator access is reserved for the founder and authorized owner access. The creator account may manage the Creator Dashboard, users, plans, payments, revenue, models, limits, reports, chat moderation tools, app settings, admin logs, and maintenance controls.",
-      "Only the authorized creator email may access creator-only features. Unauthorized access to the Creator Dashboard or hidden admin systems is strictly prohibited.",
+      `For official support, payment questions, privacy requests, or account questions, users can contact ${CREATOR_EMAIL}.`,
+      "Creator dashboard access is restricted to the founder account and protected with creator authentication before platform controls are shown.",
     ],
   },
   {
@@ -66,7 +66,7 @@ const termsSections = [
     body: [
       `Detox AI may support manual UPI payments and may later support payment gateways. For manual UPI payments, users may be asked to pay to ${CREATOR_UPI_ID}.`,
       "After payment, users may need to submit the selected plan, transaction ID, payment screenshot, payment amount, and account email. Payment access may not activate instantly during manual verification.",
-      "The creator or authorized admin may approve or reject payment requests after checking the submitted details.",
+      "Payment requests may be approved or rejected after checking the submitted details.",
     ],
   },
   {
@@ -151,10 +151,10 @@ const termsSections = [
     ],
   },
   {
-    title: "21. Moderation and Admin Review",
+    title: "21. Safety Review",
     body: [
-      "Detox AI may include moderation and creator/admin review tools. Authorized creator/admin accounts may review limited user information, reports, payment submissions, and chats only when needed for safety, moderation, abuse prevention, support, payment verification, bug investigation, legal compliance, or service improvement.",
-      "Admin review should not be used for unnecessary personal viewing. Creator/admin actions may be recorded in audit logs.",
+      "Detox AI may review reports, payment submissions, and limited account information only when needed for safety, abuse prevention, support, payment verification, bug investigation, legal compliance, or service improvement.",
+      "Creator dashboard access should not be used for unnecessary personal viewing of user activity. Important creator actions may be recorded in audit logs.",
     ],
   },
   {
@@ -197,7 +197,7 @@ const termsSections = [
     title: "27. Feedback and Suggestions",
     body: [
       "Users may share feedback, ideas, bug reports, or feature suggestions. By submitting feedback, you allow Detox AI to use it to improve the platform without compensation.",
-      "Feedback may be used for UI/UX, models, tools, pricing, dashboard features, safety systems, creator dashboard, and payment flow improvements.",
+      "Feedback may be used for UI/UX, models, tools, pricing, safety systems, and payment flow improvements.",
     ],
   },
   {
@@ -263,7 +263,7 @@ export default function TermsPage() {
     <PageShell
       eyebrow="Terms"
       title="Terms and conditions"
-      description="Last updated: 30 May 2026. These terms explain the rules for using Detox AI, including chat, tools, plans, creator controls, payments, uploads, and AI-generated responses."
+      description="Last updated: 30 May 2026. These terms explain the rules for using Detox AI, including chat, tools, plans, payments, uploads, and AI-generated responses."
     >
       <div className="grid gap-4">
         {termsSections.map((section) => (

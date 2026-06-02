@@ -1,6 +1,6 @@
 import type { PlanId } from "@/lib/limits";
 
-export type UserRole = "creator" | "admin" | "moderator" | "premium" | "pro" | "free" | "banned";
+export type UserRole = "creator" | "moderator" | "premium" | "pro" | "free" | "banned";
 
 export type DetoxUser = {
   uid: string;
@@ -10,7 +10,6 @@ export type DetoxUser = {
   role: UserRole;
   plan: PlanId;
   isCreator: boolean;
-  isAdmin: boolean;
   isBanned: boolean;
   createdAt: string;
   lastLogin: string;
@@ -22,4 +21,3 @@ export type DetoxUser = {
   premiumUntil?: string | null;
   settings?: Record<string, unknown>;
 };
-

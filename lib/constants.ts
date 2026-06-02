@@ -36,7 +36,6 @@ export const PAYMENT_STATUSES = [
 
 export const ROLES = [
   "creator",
-  "admin",
   "moderator",
   "premium",
   "pro",

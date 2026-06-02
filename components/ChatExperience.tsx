@@ -14,6 +14,7 @@ import {
   Folder,
   Home,
   Lock,
+  LogOut,
   MessageSquare,
   Mic,
   MoreHorizontal,
@@ -26,13 +27,14 @@ import {
   Sparkles,
   Square,
   Star,
+  UserRound,
   Trash2,
   Wand2,
   Wrench,
   X,
 } from "lucide-react";
 import { onAuthStateChanged, signOut, type User } from "firebase/auth";
-import { doc, getDoc, increment, serverTimestamp, setDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, increment, query, serverTimestamp, setDoc, where } from "firebase/firestore";
 import { AppLogo } from "@/components/AppLogo";
 import { CREATOR_EMAIL } from "@/lib/constants";
 import { auth, db } from "@/lib/firebase";
@@ -100,17 +102,81 @@ function createThread(): ChatThread {
   };
 }
 
-function loadThreads() {
+type StoredDateValue = Date | string | { toDate?: () => Date } | null | undefined;
+
+function getChatStorageKey(uid?: string | null) {
+  return uid ? `${STORAGE_KEY}-${uid}` : STORAGE_KEY;
+}
+
+function toIsoDate(value: StoredDateValue, fallback = new Date().toISOString()) {
+  if (!value) return fallback;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? fallback : value.toISOString();
+  if (typeof value === "string") {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
+  }
+  const converted = value.toDate?.();
+  return converted && !Number.isNaN(converted.getTime()) ? converted.toISOString() : fallback;
+}
+
+function loadThreads(storageKey = STORAGE_KEY) {
   if (typeof window === "undefined") return [createThread()];
 
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
+    const stored = window.localStorage.getItem(storageKey);
     if (!stored) return [createThread()];
     const parsed = JSON.parse(stored) as ChatThread[];
     return parsed.length ? parsed : [createThread()];
   } catch {
     return [createThread()];
   }
+}
+
+async function loadAccountThreads(user: User) {
+  const [chatSnapshot, messageSnapshot] = await Promise.all([
+    getDocs(query(collection(db, "chats"), where("userId", "==", user.uid))),
+    getDocs(query(collection(db, "messages"), where("userId", "==", user.uid))),
+  ]);
+
+  const messagesByChat = new Map<string, ChatMessage[]>();
+
+  messageSnapshot.forEach((messageDoc) => {
+    const data = messageDoc.data();
+    const chatId = typeof data.chatId === "string" ? data.chatId : "";
+    const role = data.role === "assistant" ? "assistant" : data.role === "user" ? "user" : null;
+    const content = typeof data.content === "string" ? data.content : "";
+    if (!chatId || !role || !content) return;
+
+    const message: ChatMessage = {
+      id: typeof data.messageId === "string" ? data.messageId : messageDoc.id,
+      role,
+      content,
+      modelId: typeof data.modelId === "string" ? data.modelId : undefined,
+      createdAt: toIsoDate(data.createdAt as StoredDateValue),
+    };
+    messagesByChat.set(chatId, [...(messagesByChat.get(chatId) ?? []), message]);
+  });
+
+  const remoteThreads = chatSnapshot.docs
+    .map((chatDoc): ChatThread | null => {
+      const data = chatDoc.data();
+      if (data.isDeleted) return null;
+      const chatMessages = (messagesByChat.get(chatDoc.id) ?? []).sort(
+        (left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+      );
+
+      return {
+        id: typeof data.chatId === "string" ? data.chatId : chatDoc.id,
+        title: typeof data.title === "string" && data.title.trim() ? data.title : "New Chat",
+        createdAt: toIsoDate(data.createdAt as StoredDateValue),
+        updatedAt: toIsoDate((data.updatedAt ?? data.lastMessageAt) as StoredDateValue),
+        messages: chatMessages,
+      };
+    })
+    .filter((thread): thread is ChatThread => Boolean(thread))
+    .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
+
+  return remoteThreads.length ? remoteThreads : [createThread()];
 }
 
 function titleFromMessage(message: string) {
@@ -181,6 +247,29 @@ function temperatureLabel(value: number) {
   return "Extreme thinking";
 }
 
+function normalizePlan(value: unknown): PlanId {
+  return value === "lite" ||
+    value === "go" ||
+    value === "pro" ||
+    value === "premium" ||
+    value === "ultimate" ||
+    value === "creator"
+    ? value
+    : "free";
+}
+
+function dateFromUnknown(value: unknown) {
+  if (!value) return null;
+  if (typeof value === "string") {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  if (typeof value === "object" && "toDate" in value && typeof value.toDate === "function") {
+    return value.toDate();
+  }
+  return null;
+}
+
 export function ChatExperience() {
   const [threads, setThreads] = useState<ChatThread[]>(loadThreads);
   const [activeThreadId, setActiveThreadId] = useState(() => threads[0]?.id ?? "");
@@ -197,11 +286,14 @@ export function ChatExperience() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isTuningOpen, setIsTuningOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [accountPlan, setAccountPlan] = useState<PlanId>("free");
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isRemoteChatsLoading, setIsRemoteChatsLoading] = useState(false);
   const [chatSearch, setChatSearch] = useState("");
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const userPlan: PlanId = currentUser?.email === CREATOR_EMAIL ? "creator" : "free";
+  const userPlan: PlanId = currentUser?.email === CREATOR_EMAIL ? "creator" : accountPlan;
   const planLimits = PLAN_LIMITS[userPlan];
   const activeThread = threads.find((thread) => thread.id === activeThreadId) ?? threads[0];
   const messages = activeThread?.messages ?? [];
@@ -236,8 +328,8 @@ export function ChatExperience() {
   resetDate.setDate(resetDate.getDate() + 7);
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(threads));
-  }, [threads]);
+    window.localStorage.setItem(getChatStorageKey(currentUser?.uid), JSON.stringify(threads));
+  }, [threads, currentUser?.uid]);
 
   useEffect(() => {
     let isMounted = true;
@@ -247,16 +339,60 @@ export function ChatExperience() {
       setCurrentUser(user);
       setIsAuthReady(true);
 
-      if (!user) return;
+      if (!user) {
+        setAccountPlan("free");
+        const blankThread = createThread();
+        setThreads([blankThread]);
+        setActiveThreadId(blankThread.id);
+        setIsRemoteChatsLoading(false);
+        return;
+      }
+
+      const cachedThreads = loadThreads(getChatStorageKey(user.uid));
+      setThreads(cachedThreads);
+      setActiveThreadId(cachedThreads[0]?.id ?? "");
+      setIsRemoteChatsLoading(true);
 
       try {
-        const snapshot = await getDoc(doc(db, "users", user.uid));
-        const defaultModel = snapshot.data()?.defaultModel;
+        const [snapshot, accountThreads] = await Promise.all([
+          getDoc(doc(db, "users", user.uid)),
+          loadAccountThreads(user),
+        ]);
+        const profileData = snapshot.data();
+        const defaultModel = profileData?.defaultModel;
         if (isMounted && typeof defaultModel === "string" && DETOX_MODELS.some((model) => model.id === defaultModel && model.enabled)) {
           setSelectedModel(defaultModel);
         }
+        if (isMounted) {
+          const storedPlan = user.email === CREATOR_EMAIL ? "creator" : normalizePlan(profileData?.plan);
+          const expiresAt = dateFromUnknown(profileData?.planExpiresAt);
+          const paidPlanExpired = storedPlan !== "free" && storedPlan !== "creator" && expiresAt && expiresAt.getTime() <= Date.now();
+
+          if (paidPlanExpired) {
+            setAccountPlan("free");
+            await setDoc(
+              doc(db, "users", user.uid),
+              {
+                previousPlan: storedPlan,
+                plan: "free",
+                planStatus: "expired",
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true },
+            );
+          } else {
+            setAccountPlan(storedPlan);
+          }
+        }
+        if (isMounted) {
+          setThreads(accountThreads);
+          setActiveThreadId(accountThreads[0]?.id ?? "");
+          window.localStorage.setItem(getChatStorageKey(user.uid), JSON.stringify(accountThreads));
+        }
       } catch {
-        // Profile preferences are optional; chat still works with the local default.
+        // Profile preferences and cloud chat history are optional; chat still works locally.
+      } finally {
+        if (isMounted) setIsRemoteChatsLoading(false);
       }
     });
 
@@ -279,6 +415,12 @@ export function ChatExperience() {
   function showNotice(message: string) {
     setNotice(message);
     window.setTimeout(() => setNotice(""), 2600);
+  }
+
+  async function confirmLogout() {
+    if (!window.confirm("Do you really want to log out of Detox AI?")) return;
+    setIsAccountMenuOpen(false);
+    await signOut(auth);
   }
 
   function isModelLocked(model: DetoxModel) {
@@ -313,13 +455,29 @@ export function ChatExperience() {
     setIsMobileSidebarOpen(false);
   }
 
-  function deleteChat(threadId: string) {
+  async function deleteChat(threadId: string) {
     setThreads((current) => {
       const next = current.filter((thread) => thread.id !== threadId);
       if (!next.length) return [createThread()];
       if (threadId === activeThreadId) setActiveThreadId(next[0].id);
       return next;
     });
+
+    if (!currentUser) return;
+
+    try {
+      await setDoc(
+        doc(db, "chats", threadId),
+        {
+          isDeleted: true,
+          deletedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+    } catch {
+      showNotice("Chat removed here. Cloud delete will retry when saved again.");
+    }
   }
 
   async function copyText(text: string, id: string) {
@@ -482,9 +640,8 @@ export function ChatExperience() {
           email: userEmail,
           photoURL: currentUser.photoURL,
           role: currentUser.email === CREATOR_EMAIL ? "creator" : "free",
-          plan: currentUser.email === CREATOR_EMAIL ? "creator" : "free",
+          plan: userPlan,
           isCreator: currentUser.email === CREATOR_EMAIL,
-          isAdmin: currentUser.email === CREATOR_EMAIL,
           isBanned: false,
           lastActive: now,
           dailyMessages: increment(1),
@@ -821,13 +978,55 @@ export function ChatExperience() {
                   <span className="absolute right-2 top-2 size-1.5 rounded-full bg-fuchsia-400" />
                 </button>
                 {currentUser ? (
-                  <button
-                    onClick={() => signOut(auth)}
-                    className="grid size-10 place-items-center rounded-full bg-slate-700 text-sm font-semibold"
-                    title={currentUser.email ?? "Signed in"}
-                  >
-                    {(currentUser.displayName ?? currentUser.email ?? "U").slice(0, 2).toUpperCase()}
-                  </button>
+                  <div className="relative">
+                    <button
+                      onClick={() => setIsAccountMenuOpen((current) => !current)}
+                      className="grid size-10 place-items-center overflow-hidden rounded-full border border-white/10 bg-slate-700 text-sm font-semibold"
+                      title={currentUser.email ?? "Signed in"}
+                      aria-label="Open account menu"
+                    >
+                      {currentUser.photoURL ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={currentUser.photoURL} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        (currentUser.displayName ?? currentUser.email ?? "U").slice(0, 2).toUpperCase()
+                      )}
+                    </button>
+                    {isAccountMenuOpen ? (
+                      <div className="absolute right-0 top-12 z-50 w-72 overflow-hidden rounded-2xl border border-white/10 bg-[#07111f] shadow-2xl shadow-black/40">
+                        <div className="border-b border-white/10 p-4">
+                          <p className="truncate text-sm font-semibold text-white">{currentUser.displayName ?? "Detox User"}</p>
+                          <p className="mt-1 truncate text-xs text-slate-400">{currentUser.email}</p>
+                        </div>
+                        <div className="p-2">
+                          <Link
+                            href="/profile"
+                            onClick={() => setIsAccountMenuOpen(false)}
+                            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/8"
+                          >
+                            <UserRound size={16} />
+                            Edit Profile
+                          </Link>
+                          <Link
+                            href="/settings"
+                            onClick={() => setIsAccountMenuOpen(false)}
+                            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/8"
+                          >
+                            <SlidersHorizontal size={16} />
+                            Profile Settings
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={confirmLogout}
+                            className="mt-2 flex w-full items-center gap-3 rounded-xl border border-red-300/20 bg-red-400/10 px-3 py-2.5 text-left text-sm font-semibold text-red-100 transition hover:bg-red-400/15"
+                          >
+                            <LogOut size={16} />
+                            Log Out
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                 ) : (
                   <Link href="/login" className="inline-flex h-10 items-center justify-center rounded-xl bg-cyan-300 px-3 text-sm font-semibold text-slate-950">
                     Login
@@ -845,6 +1044,12 @@ export function ChatExperience() {
 
           <section className="detox-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-5 sm:px-8">
             <div className="mx-auto max-w-4xl">
+              {isRemoteChatsLoading ? (
+                <div className="mb-5 inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
+                  <Square size={14} />
+                  Loading your saved chats...
+                </div>
+              ) : null}
               {!messages.length ? (
                 <div className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_50%_0%,rgba(37,99,235,0.25),transparent_35%),linear-gradient(180deg,rgba(9,18,33,0.92),rgba(3,7,18,0.7))] p-8">
                   <div className="flex flex-col gap-8 md:flex-row md:items-center md:justify-between">
@@ -995,7 +1200,7 @@ export function ChatExperience() {
           </div>
         </main>
 
-        <aside className="hidden h-screen overflow-hidden bg-[#050b18]/96 p-4 xl:flex xl:flex-col xl:gap-3">
+        <aside className="detox-scrollbar hidden h-screen overflow-y-auto bg-[#050b18]/96 p-4 pb-8 xl:flex xl:flex-col xl:gap-3">
           <section className="rounded-2xl border border-cyan-300/15 bg-[#091221]/92 p-3">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-semibold text-white">Response Temperature</h2>

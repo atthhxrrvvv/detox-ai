@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { deleteUser, onAuthStateChanged, signOut, updateProfile, type User } from "firebase/auth";
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where, writeBatch } from "firebase/firestore";
 import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import {
   AlertTriangle,
@@ -429,14 +429,6 @@ export function ProfileSettings() {
     });
   }, []);
 
-  useEffect(() => {
-    if (!avatarFile) return;
-
-    const objectUrl = URL.createObjectURL(avatarFile);
-    setAvatarPreview(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [avatarFile]);
-
   const initials = useMemo(() => getInitials(profile.name, profile.email), [profile.name, profile.email]);
   const planBadge = getPlanBadge(profile.plan, profile.isCreator);
   const planLimits = PLAN_LIMITS[profile.plan] ?? PLAN_LIMITS.free;
@@ -479,7 +471,9 @@ export function ProfileSettings() {
       return;
     }
 
+    if (avatarPreview.startsWith("blob:")) URL.revokeObjectURL(avatarPreview);
     setAvatarFile(file);
+    setAvatarPreview(URL.createObjectURL(file));
     setAvatarZoom(1);
     setRemoveAvatar(false);
   }
@@ -586,10 +580,38 @@ export function ProfileSettings() {
     }
   }
 
-  function clearChatHistory() {
-    if (!window.confirm("Delete all chats saved on this browser?")) return;
+  async function clearChatHistory() {
+    if (!window.confirm("Clear all chats for this signed-in account?")) return;
     window.localStorage.removeItem(CHAT_STORAGE_KEY);
-    setStatus("Chat history cleared on this browser.");
+
+    if (!firebaseUser) {
+      setStatus("Local chat history cleared on this browser.");
+      setError("");
+      return;
+    }
+
+    try {
+      const snapshot = await getDocs(query(collection(db, "chats"), where("userId", "==", firebaseUser.uid)));
+      const batch = writeBatch(db);
+      snapshot.forEach((chatDoc) => {
+        batch.set(
+          chatDoc.ref,
+          {
+            isDeleted: true,
+            deletedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+      });
+      await batch.commit();
+      window.localStorage.removeItem(`${CHAT_STORAGE_KEY}-${firebaseUser.uid}`);
+      setStatus("Chat history cleared for this account.");
+    } catch {
+      setError("Could not clear cloud chats right now. Try again after checking Firebase rules.");
+      return;
+    }
+
     setError("");
   }
 
@@ -785,6 +807,7 @@ export function ProfileSettings() {
                   Creator Dashboard
                 </Link>
               ) : null}
+
             </div>
           </div>
         </section>
@@ -1027,7 +1050,7 @@ export function ProfileSettings() {
             </div>
             <h2 className="mt-4 text-xl font-semibold text-white">Delete account</h2>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-400">
-              This action removes the Firebase login account. Some Firestore records may require creator/admin cleanup.
+              This action removes the Firebase login account. Some saved app records may remain for security, payment, or support history.
             </p>
           </div>
           <button

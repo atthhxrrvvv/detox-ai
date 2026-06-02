@@ -14,8 +14,8 @@ export default async function PaymentPage({
   return (
     <PageShell
       eyebrow="Manual UPI Payment"
-      title="Upgrade through creator approval"
-      description="Scan the QR, pay with any UPI app, upload the transaction screenshot, and send a request for creator review."
+      title="Upgrade through manual verification"
+      description="Scan the QR, pay with any UPI app, upload the transaction screenshot, and send a request for payment verification."
     >
       <ManualPaymentForm initialPlan={initialPlan} />
     </PageShell>
