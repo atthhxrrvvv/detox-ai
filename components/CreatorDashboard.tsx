@@ -3,11 +3,9 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { collection, doc, getDocs, serverTimestamp, setDoc, writeBatch } from "firebase/firestore";
 import {
   AlertTriangle,
   BarChart3,
-  Bell,
   Bot,
   Check,
   ChevronRight,
@@ -18,8 +16,10 @@ import {
   Loader2,
   Lock,
   LogOut,
+  Menu,
   Megaphone,
   MessageSquare,
+  RefreshCw,
   Search,
   Settings,
   ShieldCheck,
@@ -27,10 +27,11 @@ import {
   Star,
   Users,
   Wrench,
+  X,
 } from "lucide-react";
 import { AppLogo } from "@/components/AppLogo";
 import { CREATOR_EMAIL } from "@/lib/constants";
-import { auth, db } from "@/lib/firebase";
+import { auth } from "@/lib/firebase";
 
 type CreatorStats = {
   creatorEmail: string;
@@ -63,6 +64,14 @@ type LockState = {
   failedAttempts: number;
 };
 
+type CreatorActionButtonProps = {
+  children: React.ReactNode;
+  className?: string;
+  disabled?: boolean;
+  tone?: "neutral" | "primary" | "success" | "danger";
+  onClick: () => void;
+};
+
 const navItems = [
   ["overview", "Overview", BarChart3],
   ["users", "Users", Users],
@@ -83,6 +92,9 @@ const navItems = [
 ] as const;
 
 const paidPlans = ["lite", "go", "pro", "premium", "ultimate"] as const;
+const maxCreatorFailedAttempts = 5;
+
+const primaryMobileSections = ["overview", "users", "payments", "revenue", "logs"] as const;
 
 function asString(value: unknown, fallback = "No data yet") {
   return typeof value === "string" && value.trim() ? value : fallback;
@@ -130,134 +142,22 @@ function formatDate(value: unknown) {
   }).format(date);
 }
 
-function isSameDay(value: unknown, now = new Date()) {
-  const iso = toIsoDate(value);
-  if (!iso) return false;
-  return new Date(iso).toDateString() === now.toDateString();
-}
-
-function isSameMonth(value: unknown, now = new Date()) {
-  const iso = toIsoDate(value);
-  if (!iso) return false;
-  const date = new Date(iso);
-  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
-}
-
-function isSameWeek(value: unknown, now = new Date()) {
-  const iso = toIsoDate(value);
-  if (!iso) return false;
-  const date = new Date(iso);
-  const start = new Date(now);
-  start.setDate(now.getDate() - now.getDay());
-  start.setHours(0, 0, 0, 0);
-  return date >= start && date <= now;
-}
-
-function countBy(collectionRows: CreatorRecord[], predicate: (item: CreatorRecord) => boolean) {
-  return collectionRows.reduce((count, item) => count + (predicate(item) ? 1 : 0), 0);
-}
-
-function mostUsedModel(messages: CreatorRecord[]) {
-  const counts = new Map<string, number>();
-  messages.forEach((message) => {
-    const modelId = asString(message.modelId, "");
-    if (!modelId) return;
-    counts.set(modelId, (counts.get(modelId) ?? 0) + 1);
-  });
-  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "No data yet";
-}
-
-function mostActiveUser(messages: CreatorRecord[]) {
-  const counts = new Map<string, number>();
-  messages.forEach((message) => {
-    const userEmail = asString(message.userEmail, "");
-    if (!userEmail) return;
-    counts.set(userEmail, (counts.get(userEmail) ?? 0) + 1);
-  });
-  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "No data yet";
-}
-
-async function readCollection(name: string) {
-  const snapshot = await getDocs(collection(db, name));
-  return snapshot.docs.map((documentSnapshot) => ({
-    id: documentSnapshot.id,
-    ...documentSnapshot.data(),
-  })) as CreatorRecord[];
-}
-
-function buildCreatorStats(collections: CreatorStats["collections"]): CreatorStats {
-  const paidPlanIds = ["lite", "go", "pro", "premium", "ultimate"];
-  const approvedPayments = collections.payments.filter((payment) => payment.status === "approved");
-  const totalRevenue = approvedPayments.reduce((total, payment) => total + asNumber(payment.amount), 0);
-  const revenueByPlan = Object.fromEntries(
-    paidPlanIds.map((plan) => [
-      plan,
-      approvedPayments
-        .filter((payment) => payment.plan === plan)
-        .reduce((total, payment) => total + asNumber(payment.amount), 0),
-    ]),
-  );
-  const planCounts = Object.fromEntries(
-    ["free", ...paidPlanIds, "creator"].map((plan) => [
-      plan,
-      countBy(collections.users, (user) => asString(user.plan, "free") === plan),
-    ]),
-  );
-  const activePaidUsers = collections.users.filter((user) => paidPlanIds.includes(asString(user.plan, "")) && asString(user.planStatus, "active") === "active");
-  const expiredUsers = collections.users.filter((user) => asString(user.planStatus, "") === "expired");
-
-  return {
-    creatorEmail: CREATOR_EMAIL,
-    generatedAt: new Date().toISOString(),
-    summary: {
-      totalUsers: collections.users.length,
-      freeUsers: planCounts.free ?? 0,
-      liteUsers: planCounts.lite ?? 0,
-      goUsers: planCounts.go ?? 0,
-      proUsers: planCounts.pro ?? 0,
-      premiumUsers: planCounts.premium ?? 0,
-      ultimateUsers: planCounts.ultimate ?? 0,
-      creatorUsers: planCounts.creator ?? 0,
-      bannedUsers: countBy(collections.users, (user) => Boolean(user.isBanned)),
-      totalChats: collections.chats.length,
-      totalMessages: collections.messages.length,
-      messagesToday: countBy(collections.messages, (message) => isSameDay(message.createdAt)),
-      messagesThisWeek: countBy(collections.messages, (message) => isSameWeek(message.createdAt)),
-      messagesThisMonth: countBy(collections.messages, (message) => isSameMonth(message.createdAt)),
-      totalRevenue,
-      todayRevenue: approvedPayments.filter((payment) => isSameDay(payment.approvedAt ?? payment.createdAt)).reduce((total, payment) => total + asNumber(payment.amount), 0),
-      weekRevenue: approvedPayments.filter((payment) => isSameWeek(payment.approvedAt ?? payment.createdAt)).reduce((total, payment) => total + asNumber(payment.amount), 0),
-      monthRevenue: approvedPayments.filter((payment) => isSameMonth(payment.approvedAt ?? payment.createdAt)).reduce((total, payment) => total + asNumber(payment.amount), 0),
-      pendingPayments: countBy(collections.payments, (payment) => payment.status === "pending"),
-      approvedPayments: approvedPayments.length,
-      rejectedPayments: countBy(collections.payments, (payment) => payment.status === "rejected"),
-      activePaidPlans: activePaidUsers.length,
-      expiredPlans: expiredUsers.length,
-      totalReports: collections.reports.length,
-      openReports: countBy(collections.reports, (report) => asString(report.status, "open") === "open"),
-      solvedReports: countBy(collections.reports, (report) => asString(report.status, "") === "solved"),
-      mostUsedModel: mostUsedModel(collections.messages),
-      mostActiveUser: mostActiveUser(collections.messages),
-      apiUsageEstimate: collections.messages.reduce((total, message) => total + asNumber(message.tokensUsed), 0),
-    },
-    charts: {
-      planCounts,
-      revenueByPlan,
-      paymentStatus: {
-        pending: countBy(collections.payments, (payment) => payment.status === "pending"),
-        approved: approvedPayments.length,
-        rejected: countBy(collections.payments, (payment) => payment.status === "rejected"),
-        expired: countBy(collections.payments, (payment) => payment.status === "expired"),
-        refunded: countBy(collections.payments, (payment) => payment.status === "refunded"),
-      },
-    },
-    collections,
-  };
-}
-
 function lockLabel(lock?: LockState | null) {
   if (!lock?.locked || !lock.lockedUntil) return null;
   return `Locked until ${new Date(lock.lockedUntil).toLocaleString("en-IN")}`;
+}
+
+function attemptStatusLabel(lock?: LockState | null) {
+  if (lock?.locked) return "No attempts remaining. Creator panel is locked for 5 hours.";
+  return `Attempts remaining: ${lock?.attemptsRemaining ?? maxCreatorFailedAttempts}`;
+}
+
+function gateErrorLabel(error: string, lock?: LockState | null) {
+  if (!lock) return error;
+  if (lock.locked) return `${error} No attempts remaining. Locked for 5 hours.`;
+
+  const attempts = lock.attemptsRemaining;
+  return `${error} ${attempts} ${attempts === 1 ? "attempt" : "attempts"} remaining.`;
 }
 
 function EmptyState({ label = "No data yet. Your Detox AI platform is ready to grow." }: { label?: string }) {
@@ -315,6 +215,26 @@ function Field({ label, value }: { label: string; value: unknown }) {
   );
 }
 
+function CreatorActionButton({ children, className = "", disabled = false, tone = "neutral", onClick }: CreatorActionButtonProps) {
+  const tones = {
+    danger: "border-red-300/20 bg-red-400/10 text-red-100 hover:bg-red-400/15",
+    neutral: "border-white/10 bg-white/[0.035] text-slate-200 hover:bg-white/8",
+    primary: "border-cyan-300/20 bg-cyan-300/10 text-cyan-100 hover:bg-cyan-300/15",
+    success: "border-emerald-300/20 bg-emerald-300/12 text-emerald-100 hover:bg-emerald-300/18",
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex min-h-9 items-center justify-center rounded-lg border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${tones[tone]} ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
 function DataTable({
   title,
   rows,
@@ -327,33 +247,76 @@ function DataTable({
   empty?: string;
 }) {
   return (
-    <section className="rounded-2xl border border-white/10 bg-[#091221]/88 p-5">
-      <h3 className="font-semibold text-white">{title}</h3>
-      <div className="mt-4 overflow-x-auto">
+    <section className="rounded-2xl border border-white/10 bg-[#091221]/88 p-4 shadow-[0_22px_80px_rgba(0,0,0,0.22)] sm:p-5">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="font-semibold text-white">{title}</h3>
+        <span className="rounded-full border border-white/10 bg-white/[0.035] px-2.5 py-1 text-xs font-semibold text-slate-400">
+          {formatNumber(rows.length)}
+        </span>
+      </div>
+      <div className="mt-4">
         {rows.length ? (
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="text-xs uppercase tracking-[0.14em] text-slate-500">
-              <tr className="border-b border-white/10">
-                {columns.map(([label]) => (
-                  <th key={label} className="px-3 py-3 font-semibold">{label}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <div className="grid gap-3 md:hidden">
               {rows.map((row) => (
-                <tr key={row.id} className="border-b border-white/8 text-slate-300">
-                  {columns.map(([label, render]) => (
-                    <td key={label} className="px-3 py-3 align-top">{render(row)}</td>
-                  ))}
-                </tr>
+                <article key={row.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                  <div className="grid gap-3">
+                    {columns.map(([label, render]) => (
+                      <div key={label} className={label === "Actions" ? "border-t border-white/10 pt-3" : ""}>
+                        <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">{label}</p>
+                        <div className="mt-1 break-words text-sm text-slate-200">{render(row)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </article>
               ))}
-            </tbody>
-          </table>
+            </div>
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <thead className="text-xs uppercase tracking-[0.14em] text-slate-500">
+                  <tr className="border-b border-white/10">
+                    {columns.map(([label]) => (
+                      <th key={label} className="px-3 py-3 font-semibold">{label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.id} className="border-b border-white/8 text-slate-300">
+                      {columns.map(([label, render]) => (
+                        <td key={label} className="px-3 py-3 align-top">{render(row)}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         ) : (
           <EmptyState label={empty} />
         )}
       </div>
     </section>
+  );
+}
+
+function CreatorNav({ activeSection, onNavigate }: { activeSection: string; onNavigate?: () => void }) {
+  return (
+    <nav className="grid gap-1">
+      {navItems.map(([id, label, Icon]) => (
+        <Link
+          key={id}
+          href={id === "overview" ? "/creator" : `/creator/${id}`}
+          onClick={onNavigate}
+          className={`flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
+            activeSection === id ? "bg-cyan-300 text-slate-950" : "text-slate-300 hover:bg-white/8 hover:text-white"
+          }`}
+        >
+          <Icon size={16} />
+          {label}
+        </Link>
+      ))}
+    </nav>
   );
 }
 
@@ -372,6 +335,8 @@ export function CreatorDashboard({ section }: { section: string }) {
   const [stats, setStats] = useState<CreatorStats | null>(null);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [actionStatus, setActionStatus] = useState("");
+  const [busyAction, setBusyAction] = useState("");
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
@@ -391,26 +356,40 @@ export function CreatorDashboard({ section }: { section: string }) {
   }, []);
 
   const isFirebaseCreator = firebaseUser?.email === CREATOR_EMAIL;
+  const activeNavItem = navItems.find(([id]) => id === activeSection) ?? navItems[0];
+  const ActiveSectionIcon = activeNavItem[2];
 
-  async function loadStats() {
+  async function creatorFetch<T>(endpoint: string, init?: RequestInit) {
+    if (!firebaseUser || !creatorSession || !isFirebaseCreator) return;
+    const idToken = await firebaseUser.getIdToken();
+    const response = await fetch(endpoint, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...(init?.headers ?? {}),
+      },
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(typeof data.error === "string" ? data.error : "Creator request failed.");
+    }
+
+    return data as T;
+  }
+
+  async function loadStats(options: { preserveStatus?: boolean } = {}) {
     if (!firebaseUser || !creatorSession || !isFirebaseCreator) return;
     setIsLoadingStats(true);
-    setActionStatus("");
+    if (!options.preserveStatus) setActionStatus("");
     try {
-      const [users, chats, messages, payments, reports, models, logs] = await Promise.all([
-        readCollection("users"),
-        readCollection("chats"),
-        readCollection("messages"),
-        readCollection("payments"),
-        readCollection("reports").catch(() => []),
-        readCollection("models").catch(() => []),
-        readCollection("admin_logs").catch(() => []),
-      ]);
-      setStats(buildCreatorStats({ users, chats, messages, payments, reports, models, logs }));
+      const data = await creatorFetch<CreatorStats>("/api/creator/stats");
+      if (data) setStats(data);
     } catch (error) {
       setActionStatus(
         error instanceof Error
-          ? `${error.message} If this is Firestore rules, deploy the updated firestore.rules file.`
+          ? error.message
           : "Could not load creator dashboard.",
       );
     } finally {
@@ -437,7 +416,7 @@ export function CreatorDashboard({ section }: { section: string }) {
     const data = await response.json();
     setLock(data.lock ?? null);
     if (!response.ok) {
-      setGateError(data.error ?? "Creator login failed.");
+      setGateError(gateErrorLabel(data.error ?? "Creator login failed.", data.lock));
       return;
     }
     setPendingToken(data.pendingToken);
@@ -454,7 +433,7 @@ export function CreatorDashboard({ section }: { section: string }) {
     const data = await response.json();
     setLock(data.lock ?? null);
     if (!response.ok) {
-      setGateError(data.error ?? "PIN verification failed.");
+      setGateError(gateErrorLabel(data.error ?? "PIN verification failed.", data.lock));
       return;
     }
     setCreatorSession(true);
@@ -471,111 +450,24 @@ export function CreatorDashboard({ section }: { section: string }) {
 
   async function creatorAction(endpoint: string, body: Record<string, unknown>, success: string) {
     if (!firebaseUser) return;
+    const actionKey = `${endpoint}:${JSON.stringify(body)}`;
     setActionStatus("");
+    setBusyAction(actionKey);
     try {
-      if (endpoint === "/api/creator/payment/approve") {
-        const paymentId = String(body.paymentId ?? "");
-        const payment = stats?.collections.payments.find((item) => item.id === paymentId);
-        if (!payment) throw new Error("Payment not found.");
-        const userId = asString(payment.userId, "");
-        const plan = asString(payment.plan, "");
-        if (!userId || !paidPlans.includes(plan as (typeof paidPlans)[number])) throw new Error("Payment has invalid user or plan.");
-        const activatedAt = new Date();
-        const expiresAt = new Date(activatedAt);
-        expiresAt.setDate(expiresAt.getDate() + 30);
-        const batch = writeBatch(db);
-        batch.set(doc(db, "users", userId), {
-          plan,
-          planStatus: "active",
-          planActivatedAt: serverTimestamp(),
-          planExpiresAt: expiresAt,
-          planDurationDays: 30,
-          updatedAt: serverTimestamp(),
-        }, { merge: true });
-        batch.set(doc(db, "payments", paymentId), {
-          status: "approved",
-          approvedAt: serverTimestamp(),
-          approvedBy: CREATOR_EMAIL,
-          planActivatedAt: serverTimestamp(),
-          planExpiresAt: expiresAt,
-          planDurationDays: 30,
-          updatedAt: serverTimestamp(),
-        }, { merge: true });
-        batch.set(doc(collection(db, "admin_logs")), {
-          adminEmail: CREATOR_EMAIL,
-          action: "PAYMENT_APPROVED",
-          targetUserId: userId,
-          targetPaymentId: paymentId,
-          details: { plan, planDurationDays: 30 },
-          createdAt: serverTimestamp(),
-        });
-        await batch.commit();
-      } else if (endpoint === "/api/creator/payment/reject") {
-        const paymentId = String(body.paymentId ?? "");
-        const payment = stats?.collections.payments.find((item) => item.id === paymentId);
-        const batch = writeBatch(db);
-        batch.set(doc(db, "payments", paymentId), {
-          status: "rejected",
-          rejectedAt: serverTimestamp(),
-          rejectedBy: CREATOR_EMAIL,
-          rejectedReason: String(body.rejectedReason ?? "Payment proof could not be verified."),
-          updatedAt: serverTimestamp(),
-        }, { merge: true });
-        batch.set(doc(collection(db, "admin_logs")), {
-          adminEmail: CREATOR_EMAIL,
-          action: "PAYMENT_REJECTED",
-          targetUserId: payment?.userId ?? null,
-          targetPaymentId: paymentId,
-          details: { rejectedReason: String(body.rejectedReason ?? "") },
-          createdAt: serverTimestamp(),
-        });
-        await batch.commit();
-      } else if (endpoint === "/api/creator/user/update-plan") {
-        const uid = String(body.uid ?? "");
-        const plan = String(body.plan ?? "free");
-        const patch: Record<string, unknown> = {
-          plan,
-          planStatus: plan === "free" ? "free" : "active",
-          updatedAt: serverTimestamp(),
-        };
-        if (paidPlans.includes(plan as (typeof paidPlans)[number])) {
-          const expiresAt = new Date();
-          expiresAt.setDate(expiresAt.getDate() + 30);
-          patch.planActivatedAt = serverTimestamp();
-          patch.planExpiresAt = expiresAt;
-          patch.planDurationDays = 30;
-        }
-        await setDoc(doc(db, "users", uid), patch, { merge: true });
-        await setDoc(doc(collection(db, "admin_logs")), {
-          adminEmail: CREATOR_EMAIL,
-          action: "USER_PLAN_CHANGED",
-          targetUserId: uid,
-          details: { plan },
-          createdAt: serverTimestamp(),
-        });
-      } else if (endpoint === "/api/creator/user/ban" || endpoint === "/api/creator/user/unban") {
-        const uid = String(body.uid ?? "");
-        const isBanned = endpoint.endsWith("/ban");
-        await setDoc(doc(db, "users", uid), {
-          isBanned,
-          planStatus: isBanned ? "banned" : "free",
-          updatedAt: serverTimestamp(),
-        }, { merge: true });
-        await setDoc(doc(collection(db, "admin_logs")), {
-          adminEmail: CREATOR_EMAIL,
-          action: isBanned ? "USER_BANNED" : "USER_UNBANNED",
-          targetUserId: uid,
-          createdAt: serverTimestamp(),
-        });
-      }
+      await creatorFetch(endpoint, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      await loadStats({ preserveStatus: true });
       setActionStatus(success);
-      await loadStats();
     } catch (error) {
       setActionStatus(
         error instanceof Error
-          ? `${error.message} If this is Firestore rules, deploy the updated firestore.rules file.`
-          : "Creator action failed.",
+          ? error.message
+        : "Creator action failed.",
       );
+    } finally {
+      setBusyAction("");
     }
   }
 
@@ -589,6 +481,10 @@ export function CreatorDashboard({ section }: { section: string }) {
       ),
     );
   }, [query, stats?.collections.users]);
+
+  function isActionRunning(endpoint: string, body: Record<string, unknown>) {
+    return busyAction === `${endpoint}:${JSON.stringify(body)}`;
+  }
 
   if (!isCreatorSessionReady || !isAuthReady) {
     return (
@@ -610,10 +506,10 @@ export function CreatorDashboard({ section }: { section: string }) {
             <h1 className="mt-4 text-4xl font-semibold tracking-tight sm:text-6xl">Founder control stays locked.</h1>
             <p className="mt-5 max-w-xl leading-7 text-slate-400">
               Enter the creator username and password first. After that, the PIN check unlocks a signed server session.
-              Three wrong attempts locks this panel for 24 hours.
+              Five wrong attempts lock this panel for 5 hours.
             </p>
             <div className="mt-6 grid gap-3 text-sm text-slate-300 sm:grid-cols-2">
-              {["Server-side credential checks", "HttpOnly signed session", "PIN second step", "24-hour lockout"].map((item) => (
+              {["Server-side credential checks", "HttpOnly signed session", "PIN second step", "5-hour lockout"].map((item) => (
                 <div key={item} className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-3">
                   <ShieldCheck size={16} className="text-cyan-100" />
                   {item}
@@ -664,7 +560,7 @@ export function CreatorDashboard({ section }: { section: string }) {
                   disabled={Boolean(lock?.locked)}
                   required
                 />
-                <button disabled={Boolean(lock?.locked)} className="mt-2 h-11 rounded-xl bg-white font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
+                <button type="submit" disabled={Boolean(lock?.locked)} className="mt-2 h-11 rounded-xl bg-white font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
                   Continue to PIN
                 </button>
               </form>
@@ -682,7 +578,7 @@ export function CreatorDashboard({ section }: { section: string }) {
                   disabled={Boolean(lock?.locked)}
                   required
                 />
-                <button disabled={Boolean(lock?.locked)} className="mt-2 h-11 rounded-xl bg-cyan-300 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
+                <button type="submit" disabled={Boolean(lock?.locked)} className="mt-2 h-11 rounded-xl bg-cyan-300 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">
                   Unlock Creator Dashboard
                 </button>
                 <button type="button" onClick={() => setPendingToken("")} className="text-sm font-semibold text-slate-400 hover:text-white">
@@ -692,7 +588,7 @@ export function CreatorDashboard({ section }: { section: string }) {
             )}
 
             <p className="mt-5 text-xs leading-5 text-slate-500">
-              Attempts remaining: {lock?.attemptsRemaining ?? 3}. Credentials are checked on the server, then the browser receives only a signed creator session cookie.
+              {attemptStatusLabel(lock)}. Credentials are checked on the server, then the browser receives only a signed creator session cookie.
             </p>
           </section>
         </div>
@@ -711,7 +607,7 @@ export function CreatorDashboard({ section }: { section: string }) {
           </p>
           <div className="mt-5 flex justify-center gap-3">
             <Link href="/login" className="inline-flex h-10 items-center rounded-xl bg-white px-4 text-sm font-semibold text-slate-950">Login</Link>
-            <button onClick={logoutCreator} className="inline-flex h-10 items-center rounded-xl border border-white/10 px-4 text-sm font-semibold text-slate-200">Lock Creator Gate</button>
+            <button type="button" onClick={logoutCreator} className="inline-flex h-10 items-center rounded-xl border border-white/10 px-4 text-sm font-semibold text-slate-200">Lock Creator Gate</button>
           </div>
         </section>
       </main>
@@ -726,6 +622,38 @@ export function CreatorDashboard({ section }: { section: string }) {
   return (
     <div className="min-h-screen bg-[#020713] text-white">
       <div className="fixed inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(6,182,212,0.12),transparent_28%),radial-gradient(circle_at_80%_0%,rgba(139,92,246,0.13),transparent_24%)]" />
+      {isMobileNavOpen ? (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <button
+            type="button"
+            aria-label="Close navigation overlay"
+            className="absolute inset-0 bg-black/65 backdrop-blur-sm"
+            onClick={() => setIsMobileNavOpen(false)}
+          />
+          <aside className="relative flex h-full w-[min(22rem,88vw)] flex-col border-r border-white/10 bg-[#050b18] p-4 shadow-[24px_0_90px_rgba(0,0,0,0.45)]">
+            <div className="flex items-center justify-between gap-3">
+              <Link href="/creator" onClick={() => setIsMobileNavOpen(false)} className="flex min-w-0 items-center gap-3">
+                <AppLogo size={42} className="rounded-xl" />
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold">Detox AI Admin</span>
+                  <span className="text-xs text-amber-100">Creator Mode</span>
+                </span>
+              </Link>
+              <button
+                type="button"
+                onClick={() => setIsMobileNavOpen(false)}
+                className="grid size-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-200"
+                aria-label="Close creator navigation"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="mt-5 min-h-0 flex-1 overflow-y-auto pr-1 detox-scrollbar">
+              <CreatorNav activeSection={activeSection} onNavigate={() => setIsMobileNavOpen(false)} />
+            </div>
+          </aside>
+        </div>
+      ) : null}
       <div className="relative flex min-h-screen">
         <aside className="hidden w-72 shrink-0 border-r border-white/10 bg-[#050b18]/94 p-4 lg:block">
           <Link href="/creator" className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3">
@@ -735,46 +663,77 @@ export function CreatorDashboard({ section }: { section: string }) {
               <span className="text-xs text-amber-100">Creator Mode</span>
             </span>
           </Link>
-          <nav className="mt-5 grid gap-1">
-            {navItems.map(([id, label, Icon]) => (
-              <Link
-                key={id}
-                href={id === "overview" ? "/creator" : `/creator/${id}`}
-                className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
-                  activeSection === id ? "bg-cyan-300 text-slate-950" : "text-slate-300 hover:bg-white/8 hover:text-white"
-                }`}
-              >
-                <Icon size={16} />
-                {label}
-              </Link>
-            ))}
-          </nav>
+          <div className="mt-5">
+            <CreatorNav activeSection={activeSection} />
+          </div>
         </aside>
 
         <main className="min-w-0 flex-1">
           <header className="sticky top-0 z-30 border-b border-white/10 bg-[#020713]/82 px-4 py-3 backdrop-blur-xl">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
+              <div className="flex min-w-0 items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsMobileNavOpen(true)}
+                  className="grid size-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-200 lg:hidden"
+                  aria-label="Open creator navigation"
+                >
+                  <Menu size={18} />
+                </button>
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-cyan-300/20 bg-cyan-300/10 text-cyan-100 lg:hidden">
+                  <ActiveSectionIcon size={18} />
+                </span>
+                <div className="min-w-0">
                 <p className="text-xs uppercase tracking-[0.22em] text-cyan-200">Detox AI Admin</p>
-                <h1 className="text-2xl font-semibold capitalize">{activeSection.replace("-", " ")}</h1>
+                  <h1 className="truncate text-xl font-semibold capitalize sm:text-2xl">{activeSection.replace("-", " ")}</h1>
+                </div>
               </div>
               <div className="flex min-w-0 items-center gap-2">
                 <div className="hidden h-10 min-w-64 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-slate-400 md:flex">
                   <Search size={16} />
                   <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search users, payments, chats..." className="w-full bg-transparent text-sm outline-none" />
                 </div>
-                <button className="grid size-10 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-200" aria-label="Notifications">
-                  <Bell size={17} />
+                <button
+                  type="button"
+                  onClick={() => void loadStats()}
+                  disabled={isLoadingStats}
+                  className="grid size-10 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-55"
+                  aria-label="Refresh creator data"
+                  title="Refresh creator data"
+                >
+                  <RefreshCw className={isLoadingStats ? "animate-spin" : ""} size={17} />
                 </button>
                 <span className="hidden items-center gap-2 rounded-xl border border-amber-300/25 bg-amber-300/10 px-3 py-2 text-sm font-semibold text-amber-100 sm:inline-flex">
                   <Crown size={15} />
                   Unlimited Access
                 </span>
-                <button onClick={logoutCreator} className="inline-flex h-10 items-center gap-2 rounded-xl border border-red-300/20 bg-red-400/10 px-3 text-sm font-semibold text-red-100">
+                <button type="button" onClick={logoutCreator} className="inline-flex h-10 items-center gap-2 rounded-xl border border-red-300/20 bg-red-400/10 px-3 text-sm font-semibold text-red-100">
                   <LogOut size={15} />
                   Logout
                 </button>
               </div>
+            </div>
+            <div className="mt-3 grid gap-3 lg:hidden">
+              <div className="flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-slate-400 md:hidden">
+                <Search size={16} />
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search admin data..." className="w-full bg-transparent text-sm outline-none" />
+              </div>
+              <nav className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 detox-scrollbar" aria-label="Quick creator sections">
+                {navItems.filter(([id]) => primaryMobileSections.includes(id as (typeof primaryMobileSections)[number])).map(([id, label, Icon]) => (
+                  <Link
+                    key={id}
+                    href={id === "overview" ? "/creator" : `/creator/${id}`}
+                    className={`inline-flex min-h-9 shrink-0 items-center gap-2 rounded-full border px-3 text-xs font-semibold transition ${
+                      activeSection === id
+                        ? "border-cyan-300 bg-cyan-300 text-slate-950"
+                        : "border-white/10 bg-white/[0.035] text-slate-300"
+                    }`}
+                  >
+                    <Icon size={14} />
+                    {label}
+                  </Link>
+                ))}
+              </nav>
             </div>
           </header>
 
@@ -826,17 +785,38 @@ export function CreatorDashboard({ section }: { section: string }) {
                   ["Status", (row) => String(row.isBanned ? "Banned" : asString(row.planStatus, "active"))],
                   ["Expires", (row) => formatDate(row.planExpiresAt)],
                   ["Usage", (row) => `${formatNumber(row.dailyMessages)} today / ${formatNumber(row.monthlyMessages)} month`],
-                  ["Actions", (row) => (
-                    <div className="flex flex-wrap gap-2">
-                      <button onClick={() => creatorAction("/api/creator/user/update-plan", { uid: row.id, plan: "free" }, "User moved to Free plan.")} className="rounded-lg border border-white/10 px-2 py-1 text-xs">Free</button>
-                      <button onClick={() => creatorAction("/api/creator/user/update-plan", { uid: row.id, plan: "premium" }, "User moved to Premium for 30 days.")} className="rounded-lg border border-cyan-300/20 px-2 py-1 text-xs text-cyan-100">Premium</button>
-                      {row.isBanned ? (
-                        <button onClick={() => creatorAction("/api/creator/user/unban", { uid: row.id }, "User unbanned.")} className="rounded-lg border border-emerald-300/20 px-2 py-1 text-xs text-emerald-100">Unban</button>
-                      ) : (
-                        <button onClick={() => creatorAction("/api/creator/user/ban", { uid: row.id }, "User banned.")} className="rounded-lg border border-red-300/20 px-2 py-1 text-xs text-red-100">Ban</button>
-                      )}
-                    </div>
-                  )],
+                  ["Actions", (row) => {
+                    const freeBody = { uid: row.id, plan: "free" };
+                    const premiumBody = { uid: row.id, plan: "premium" };
+                    const accessBody = { uid: row.id };
+                    const accessEndpoint = row.isBanned ? "/api/creator/user/unban" : "/api/creator/user/ban";
+
+                    return (
+                      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                        <CreatorActionButton
+                          disabled={isActionRunning("/api/creator/user/update-plan", freeBody)}
+                          onClick={() => creatorAction("/api/creator/user/update-plan", freeBody, "User moved to Free plan.")}
+                        >
+                          Free
+                        </CreatorActionButton>
+                        <CreatorActionButton
+                          tone="primary"
+                          disabled={isActionRunning("/api/creator/user/update-plan", premiumBody)}
+                          onClick={() => creatorAction("/api/creator/user/update-plan", premiumBody, "User moved to Premium for 30 days.")}
+                        >
+                          Premium
+                        </CreatorActionButton>
+                        <CreatorActionButton
+                          tone={row.isBanned ? "success" : "danger"}
+                          className="col-span-2 sm:col-span-1"
+                          disabled={isActionRunning(accessEndpoint, accessBody)}
+                          onClick={() => creatorAction(accessEndpoint, accessBody, row.isBanned ? "User unbanned." : "User banned.")}
+                        >
+                          {row.isBanned ? "Unban" : "Ban"}
+                        </CreatorActionButton>
+                      </div>
+                    );
+                  }],
                 ]}
               />
             ) : null}
@@ -854,12 +834,29 @@ export function CreatorDashboard({ section }: { section: string }) {
                     ["Transaction", (row) => asString(row.transactionId)],
                     ["Submitted", (row) => formatDate(row.createdAt)],
                     ["Proof", (row) => row.screenshotUrl ? <a className="text-cyan-100 underline" href={String(row.screenshotUrl)} target="_blank">Open</a> : "No proof"],
-                    ["Actions", (row) => (
-                      <div className="flex flex-wrap gap-2">
-                        <button onClick={() => creatorAction("/api/creator/payment/approve", { paymentId: row.id }, "Payment approved and plan activated for 30 days.")} className="rounded-lg bg-emerald-300 px-2 py-1 text-xs font-semibold text-emerald-950">Approve</button>
-                        <button onClick={() => creatorAction("/api/creator/payment/reject", { paymentId: row.id, rejectedReason: "Payment proof could not be verified." }, "Payment rejected.")} className="rounded-lg bg-red-400 px-2 py-1 text-xs font-semibold text-white">Reject</button>
-                      </div>
-                    )],
+                    ["Actions", (row) => {
+                      const approveBody = { paymentId: row.id };
+                      const rejectBody = { paymentId: row.id, rejectedReason: "Payment proof could not be verified." };
+
+                      return (
+                        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                          <CreatorActionButton
+                            tone="success"
+                            disabled={isActionRunning("/api/creator/payment/approve", approveBody)}
+                            onClick={() => creatorAction("/api/creator/payment/approve", approveBody, "Payment approved and plan activated for 30 days.")}
+                          >
+                            Approve
+                          </CreatorActionButton>
+                          <CreatorActionButton
+                            tone="danger"
+                            disabled={isActionRunning("/api/creator/payment/reject", rejectBody)}
+                            onClick={() => creatorAction("/api/creator/payment/reject", rejectBody, "Payment rejected.")}
+                          >
+                            Reject
+                          </CreatorActionButton>
+                        </div>
+                      );
+                    }],
                   ]}
                 />
                 <DataTable

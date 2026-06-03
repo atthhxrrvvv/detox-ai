@@ -5,8 +5,8 @@ import { verifyFirebaseIdToken } from "@/lib/serverAuth";
 const SESSION_COOKIE = "detox_creator_session";
 const PENDING_TTL_MS = 10 * 60 * 1000;
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
-const LOCK_TTL_MS = 24 * 60 * 60 * 1000;
-const MAX_FAILED_ATTEMPTS = 3;
+const LOCK_TTL_MS = 5 * 60 * 60 * 1000;
+const MAX_FAILED_ATTEMPTS = 5;
 
 const USERNAME_HASH =
   process.env.CREATOR_GATE_USERNAME_SHA256 ??

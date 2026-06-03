@@ -7,7 +7,7 @@ export async function POST(request: Request) {
   if (!result.ok) {
     return Response.json(
       {
-        error: result.locked ? "Creator gate is locked for 24 hours." : "Incorrect creator PIN.",
+        error: result.locked ? "Creator gate is locked for 5 hours." : "Incorrect creator PIN.",
         lock: result.lock,
       },
       { status: result.locked ? 423 : 401 },

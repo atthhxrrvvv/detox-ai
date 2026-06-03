@@ -3,7 +3,7 @@ import { getCreatorLockStatus, verifyCreatorUsernamePassword } from "@/lib/creat
 function lockResponse(lock: ReturnType<typeof getCreatorLockStatus>) {
   return Response.json(
     {
-      error: "Creator gate is locked because of repeated incorrect attempts.",
+      error: "Creator gate is locked for 5 hours because of repeated incorrect attempts.",
       lock,
     },
     { status: 423 },
