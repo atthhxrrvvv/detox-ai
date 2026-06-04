@@ -23,7 +23,8 @@ service cloud.firestore {
     match /messages/{messageId} {
       allow read: if signedIn() && (resource.data.userId == request.auth.uid || isCreator());
       allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isCreator();
+      allow update: if signedIn() && (resource.data.userId == request.auth.uid || isCreator());
+      allow delete: if isCreator();
     }
 
     match /payments/{paymentId} {

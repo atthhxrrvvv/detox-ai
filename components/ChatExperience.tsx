@@ -692,8 +692,8 @@ export function ChatExperience() {
         },
         { merge: true },
       );
-    } catch {
-      // Firestore persistence is best-effort in local development.
+    } catch (error) {
+      console.error("Detox AI: Could not save chat to Firestore.", error);
     }
   }
 
