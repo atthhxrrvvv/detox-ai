@@ -28,6 +28,12 @@ type PendingChallenge = {
   createdAt: number;
 };
 
+type PendingPayload = {
+  id: string;
+  stage: string;
+  createdAt: number;
+};
+
 type CreatorGlobal = typeof globalThis & {
   detoxCreatorLockState?: LockState;
   detoxCreatorPending?: Map<string, PendingChallenge>;
@@ -153,9 +159,14 @@ export function verifyCreatorPin(pendingToken: string, pin: string) {
     return { ok: false, locked: true, lock };
   }
 
-  const payload = readSignedPayload<{ id: string; stage: string; createdAt: number }>(pendingToken);
+  const payload = readSignedPayload<PendingPayload>(pendingToken);
   const challenge = payload?.stage === "pin" ? pendingChallenges.get(payload.id) : null;
-  const challengeFresh = challenge && Date.now() - challenge.createdAt <= PENDING_TTL_MS;
+  const challengeCreatedAt = challenge?.createdAt ?? payload?.createdAt;
+  const challengeFresh =
+    payload?.stage === "pin" &&
+    typeof challengeCreatedAt === "number" &&
+    challengeCreatedAt <= Date.now() &&
+    Date.now() - challengeCreatedAt <= PENDING_TTL_MS;
   const pinOk = safeEqual(sha256(pin.trim()), PIN_HASH);
 
   if (!challengeFresh || !pinOk) {
@@ -167,7 +178,7 @@ export function verifyCreatorPin(pendingToken: string, pin: string) {
     };
   }
 
-  pendingChallenges.delete(challenge.id);
+  pendingChallenges.delete(payload.id);
   resetFailedAttempts();
 
   return {

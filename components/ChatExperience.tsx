@@ -353,11 +353,9 @@ export function ChatExperience() {
       setActiveThreadId(cachedThreads[0]?.id ?? "");
       setIsRemoteChatsLoading(true);
 
+      // Load profile and chats independently so a profile failure doesn't block chat sync
       try {
-        const [snapshot, accountThreads] = await Promise.all([
-          getDoc(doc(db, "users", user.uid)),
-          loadAccountThreads(user),
-        ]);
+        const snapshot = await getDoc(doc(db, "users", user.uid));
         const profileData = snapshot.data();
         const defaultModel = profileData?.defaultModel;
         if (isMounted && typeof defaultModel === "string" && DETOX_MODELS.some((model) => model.id === defaultModel && model.enabled)) {
@@ -384,13 +382,20 @@ export function ChatExperience() {
             setAccountPlan(storedPlan);
           }
         }
+      } catch (profileError) {
+        console.error("Detox AI: Could not load user profile.", profileError);
+      }
+
+      // Load remote chats separately — this is the critical part for cross-device sync
+      try {
+        const accountThreads = await loadAccountThreads(user);
         if (isMounted) {
           setThreads(accountThreads);
           setActiveThreadId(accountThreads[0]?.id ?? "");
           window.localStorage.setItem(getChatStorageKey(user.uid), JSON.stringify(accountThreads));
         }
-      } catch {
-        // Profile preferences and cloud chat history are optional; chat still works locally.
+      } catch (chatError) {
+        console.error("Detox AI: Could not load cloud chats.", chatError);
       } finally {
         if (isMounted) setIsRemoteChatsLoading(false);
       }
@@ -628,11 +633,15 @@ export function ChatExperience() {
   async function recordUsage(userMessage: ChatMessage, assistantMessage: ChatMessage, tokensUsed: number) {
     if (!currentUser || !activeThread) return;
 
-    try {
-      const now = serverTimestamp();
-      const userEmail = currentUser.email ?? "";
-      const chatRef = doc(db, "chats", activeThread.id);
-      await setDoc(
+    const now = serverTimestamp();
+    const userEmail = currentUser.email ?? "";
+    const chatTitle = activeThread.title === "New Chat" ? titleFromMessage(userMessage.content) : activeThread.title;
+
+    // Write user stats, chat doc, and messages INDEPENDENTLY
+    // so a failure in one doesn't block the others
+    const results = await Promise.allSettled([
+      // 1. Update user stats
+      setDoc(
         doc(db, "users", currentUser.uid),
         {
           uid: currentUser.uid,
@@ -650,14 +659,15 @@ export function ChatExperience() {
           tokensUsed: increment(Number(tokensUsed) || 0),
         },
         { merge: true },
-      );
-      await setDoc(
-        chatRef,
+      ),
+      // 2. Save chat document
+      setDoc(
+        doc(db, "chats", activeThread.id),
         {
           chatId: activeThread.id,
           userId: currentUser.uid,
           userEmail,
-          title: activeThread.title === "New Chat" ? titleFromMessage(userMessage.content) : activeThread.title,
+          title: chatTitle,
           modelId: selectedModel,
           createdAt: activeThread.createdAt,
           updatedAt: now,
@@ -666,8 +676,9 @@ export function ChatExperience() {
           isDeleted: false,
         },
         { merge: true },
-      );
-      await setDoc(
+      ),
+      // 3. Save user message
+      setDoc(
         doc(db, "messages", userMessage.id),
         {
           ...userMessage,
@@ -678,8 +689,9 @@ export function ChatExperience() {
           createdAt: now,
         },
         { merge: true },
-      );
-      await setDoc(
+      ),
+      // 4. Save assistant message
+      setDoc(
         doc(db, "messages", assistantMessage.id),
         {
           ...assistantMessage,
@@ -691,9 +703,15 @@ export function ChatExperience() {
           createdAt: now,
         },
         { merge: true },
-      );
-    } catch (error) {
-      console.error("Detox AI: Could not save chat to Firestore.", error);
+      ),
+    ]);
+
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length > 0) {
+      for (const f of failures) {
+        console.error("Detox AI: Firestore write failed.", (f as PromiseRejectedResult).reason);
+      }
+      showNotice("Chat could not be saved to cloud. Check your connection.");
     }
   }
 
