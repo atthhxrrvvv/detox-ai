@@ -4,6 +4,7 @@ import { AppLogo } from "@/components/AppLogo";
 
 const navItems = [
   { href: "/chat", label: "Chat" },
+  { href: "/learn", label: "Learn" },
   { href: "/tools", label: "Tools" },
   { href: "/pricing", label: "Pricing" },
 ];

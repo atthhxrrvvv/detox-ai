@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { CREATOR_EMAIL } from "@/lib/constants";
 import { requireCreatorApi } from "@/lib/creatorSecurity";
-import { firestoreError, patchFirestoreDocument } from "@/lib/firestoreRest";
+import { firestoreError, getFirestoreDocument, patchFirestoreDocument } from "@/lib/firestoreRest";
 
 export async function POST(request: Request) {
   const creator = await requireCreatorApi(request);
@@ -17,11 +17,26 @@ export async function POST(request: Request) {
     }
 
     const now = new Date();
+
+    // Read current plan for audit trail (previousPlan)
+    let currentPlan: string | undefined;
+    try {
+      const userDoc = await getFirestoreDocument("users", uid, creator.idToken);
+      currentPlan = typeof userDoc.plan === "string" ? userDoc.plan : undefined;
+    } catch {
+      // If we can't read the current plan, that's OK — just skip previousPlan
+    }
+
     const patch: Record<string, unknown> = {
       plan,
       planStatus: plan === "free" ? "free" : "active",
       updatedAt: now.toISOString(),
+      role: plan === "creator" ? "creator" : plan === "free" ? "free" : plan,
     };
+
+    if (currentPlan && currentPlan !== plan) {
+      patch.previousPlan = currentPlan;
+    }
 
     if (["lite", "go", "pro", "premium", "ultimate"].includes(plan)) {
       const expiresAt = new Date(now);
@@ -34,6 +49,7 @@ export async function POST(request: Request) {
     if (plan === "free") {
       patch.planExpiresAt = null;
       patch.planDurationDays = 0;
+      patch.planActivatedAt = null;
     }
 
     await patchFirestoreDocument("users", uid, creator.idToken, patch);

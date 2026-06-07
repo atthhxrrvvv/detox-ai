@@ -10,9 +10,10 @@ export type DetoxPayment = {
   plan: Exclude<PlanId, "free" | "creator">;
   amount: number;
   currency: "INR";
-  paymentMethod: "manual_upi" | "razorpay";
-  upiId: string;
-  transactionId: string;
+  paymentMethod: "manual_upi" | "razorpay" | "promo_code";
+  upiId?: string | null;
+  transactionId?: string | null;
+  promoCode?: string | null;
   screenshotUrl?: string | null;
   status: PaymentStatus;
   approvedBy?: string | null;

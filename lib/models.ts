@@ -1,4 +1,4 @@
-export type ModelAccess = "free" | "pro" | "premium";
+export type ModelAccess = "free" | "pro" | "premium" | "ultimate";
 
 export type DetoxModel = {
   id: string;
@@ -138,7 +138,7 @@ export const DETOX_MODELS: DetoxModel[] = [
     id: "titan-5.0",
     displayName: "Titan 5.0",
     emoji: "🚀",
-    access: "premium",
+    access: "ultimate",
     category: "Project Builder",
     description: "For full apps, websites, startup blueprints, and big systems.",
     backendModel: "mistral-large-latest",
@@ -171,7 +171,7 @@ export const DETOX_MODELS: DetoxModel[] = [
     id: "atlas-4.0",
     displayName: "Atlas 4.0",
     emoji: "📊",
-    access: "premium",
+    access: "ultimate",
     category: "Business",
     description: "For analytics, product strategy, and business planning.",
     backendModel: "mistral-large-latest",

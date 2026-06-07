@@ -7,7 +7,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
-import { CheckCircle2, CreditCard, FileImage, Loader2, QrCode, ShieldCheck, Upload } from "lucide-react";
+import { CheckCircle2, CreditCard, FileImage, Loader2, QrCode, ShieldCheck, Upload, X } from "lucide-react";
 import { CREATOR_UPI_ID } from "@/lib/constants";
 import { auth, db, storage } from "@/lib/firebase";
 
@@ -20,6 +20,10 @@ const plans = [
 ] as const;
 
 type BillingCycle = "monthly" | "yearly";
+type PromoResult = {
+  message: string;
+  tone: "success" | "error";
+};
 
 function formatRupees(amount: number) {
   return new Intl.NumberFormat("en-IN", {
@@ -39,6 +43,9 @@ export function ManualPaymentForm({ initialPlan = "pro" }: { initialPlan?: strin
   const [screenshot, setScreenshot] = useState<File | null>(null);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
+  const [promoCode, setPromoCode] = useState("");
+  const [promoResult, setPromoResult] = useState<PromoResult | null>(null);
+  const [isRedeemingPromo, setIsRedeemingPromo] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -53,6 +60,58 @@ export function ManualPaymentForm({ initialPlan = "pro" }: { initialPlan?: strin
     [selectedPlanId],
   );
   const amount = billingCycle === "monthly" ? selectedPlan.monthly : selectedPlan.yearly;
+
+  async function redeemPromoCode() {
+    setError("");
+    setPromoResult(null);
+
+    if (!user) {
+      setPromoResult({ message: "Login first so this Detox code can be linked to your account.", tone: "error" });
+      return;
+    }
+
+    if (!promoCode.trim()) {
+      setPromoResult({ message: "Incorrect code. Enter your Detox code first.", tone: "error" });
+      return;
+    }
+
+    setIsRedeemingPromo(true);
+
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch("/api/promo/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: promoCode,
+          plan: selectedPlan.id,
+          idToken,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Detox code redemption failed.");
+      }
+
+      setPromoResult({ message: "Redeem successfully. Your plan is active for 30 days.", tone: "success" });
+      window.setTimeout(() => {
+        router.push(`/payment/success?source=promo&paymentId=${data.paymentId ?? ""}`);
+      }, 1200);
+    } catch (promoError) {
+      const message = promoError instanceof Error ? promoError.message : "Detox code redemption failed.";
+      const cleanMessage = message.replace("Firebase: ", "");
+      const lowerMessage = cleanMessage.toLowerCase();
+      const displayMessage = lowerMessage.includes("already used")
+        ? "Code already used."
+        : lowerMessage.includes("not valid") || lowerMessage.includes("inactive") || lowerMessage.includes("incorrect")
+          ? "Incorrect code."
+          : cleanMessage;
+      setPromoResult({ message: displayMessage, tone: "error" });
+    } finally {
+      setIsRedeemingPromo(false);
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -246,6 +305,53 @@ export function ManualPaymentForm({ initialPlan = "pro" }: { initialPlan?: strin
             </span>
           </div>
           <p className="mt-2 text-sm text-slate-400">{selectedPlan.files} included after approval.</p>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-emerald-300/20 bg-emerald-300/8 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="min-w-0 flex-1">
+              <label className="block text-sm font-semibold text-emerald-50" htmlFor="promoCode">
+                Detox code
+              </label>
+              <input
+                id="promoCode"
+                value={promoCode}
+                onChange={(event) => setPromoCode(event.target.value.toUpperCase())}
+                className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/25 px-3 font-mono text-sm uppercase tracking-wide outline-none focus:border-emerald-300/60"
+                placeholder="DTX-PRO-XXXXXX-001"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={redeemPromoCode}
+              disabled={!user || isRedeemingPromo}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-200 px-4 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isRedeemingPromo ? <Loader2 className="animate-spin" size={16} /> : <ShieldCheck size={16} />}
+              {isRedeemingPromo ? "Checking..." : "Redeem"}
+            </button>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-emerald-50/75">
+            Select the matching plan first. Plus codes are used with the Go plan in this app.
+          </p>
+          {promoResult ? (
+            <div
+              className={`mt-4 rounded-2xl border px-4 py-5 text-center ${
+                promoResult.tone === "success"
+                  ? "border-emerald-200/40 bg-emerald-400/20 text-emerald-50"
+                  : "border-red-300/40 bg-red-500/20 text-red-50"
+              }`}
+            >
+              <div
+                className={`mx-auto grid size-12 place-items-center rounded-full ${
+                  promoResult.tone === "success" ? "bg-emerald-200 text-emerald-950" : "bg-red-200 text-red-950"
+                }`}
+              >
+                {promoResult.tone === "success" ? <CheckCircle2 size={24} /> : <X size={24} />}
+              </div>
+              <p className="mt-3 text-lg font-semibold">{promoResult.message}</p>
+            </div>
+          ) : null}
         </div>
 
         <label className="mt-4 block text-sm text-slate-300" htmlFor="transactionId">

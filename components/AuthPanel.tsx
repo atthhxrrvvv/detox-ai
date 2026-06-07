@@ -14,7 +14,7 @@ import {
   setPersistence,
   updateProfile,
 } from "firebase/auth";
-import { doc, serverTimestamp, setDoc } from "firebase/firestore";
+import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { Bot, Loader2, Mail } from "lucide-react";
 import { CREATOR_EMAIL } from "@/lib/constants";
 import { auth, db } from "@/lib/firebase";
@@ -58,18 +58,29 @@ export function AuthPanel({ mode }: { mode: "login" | "signup" }) {
   }
 
   async function syncUserProfile(user: User) {
+    const profileRef = doc(db, "users", user.uid);
+    const existingProfile = await getDoc(profileRef).catch(() => null);
+    const isNewProfile = !existingProfile?.exists();
+    const isCreator = user.email === CREATOR_EMAIL;
+
     await setDoc(
-      doc(db, "users", user.uid),
+      profileRef,
       {
         uid: user.uid,
         name: (user.displayName ?? name.trim()) || "Detox User",
         email: user.email,
         photoURL: user.photoURL,
-        role: user.email === CREATOR_EMAIL ? "creator" : "free",
-        plan: user.email === CREATOR_EMAIL ? "creator" : "free",
-        isCreator: user.email === CREATOR_EMAIL,
-        isBanned: false,
-        blockedPermanently: false,
+        ...(isCreator ? { role: "creator", plan: "creator", isCreator: true } : {}),
+        ...(isNewProfile && !isCreator
+          ? {
+              role: "free",
+              plan: "free",
+              planStatus: "free",
+              isCreator: false,
+              isBanned: false,
+              blockedPermanently: false,
+            }
+          : {}),
         lastLogin: serverTimestamp(),
         lastActive: serverTimestamp(),
       },

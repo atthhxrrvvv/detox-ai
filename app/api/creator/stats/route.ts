@@ -60,17 +60,29 @@ function mostActiveUser(messages: FirestoreRestRecord[]) {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "No data yet";
 }
 
+function countsByField(records: FirestoreRestRecord[], field: string) {
+  const counts = new Map<string, number>();
+  records.forEach((record) => {
+    const value = stringValue(record[field]);
+    if (!value) return;
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  });
+  return Object.fromEntries([...counts.entries()].sort((a, b) => b[1] - a[1]));
+}
+
 export async function GET(request: Request) {
   const creator = await requireCreatorApi(request);
   if (!creator.ok) return creator.response;
 
   try {
-    const [users, chats, messages, payments, reports, models, logs] = await Promise.all([
+    const [users, chats, messages, payments, reports, reactions, labVotes, models, logs] = await Promise.all([
       listFirestoreDocuments("users", creator.idToken),
       listFirestoreDocuments("chats", creator.idToken),
       listFirestoreDocuments("messages", creator.idToken),
       listFirestoreDocuments("payments", creator.idToken),
       listFirestoreDocuments("reports", creator.idToken),
+      listFirestoreDocuments("message_reactions", creator.idToken).catch(() => []),
+      listFirestoreDocuments("lab_votes", creator.idToken).catch(() => []),
       listFirestoreDocuments("models", creator.idToken).catch(() => []),
       listFirestoreDocuments("admin_logs", creator.idToken).catch(() => []),
     ]);
@@ -136,6 +148,9 @@ export async function GET(request: Request) {
         totalReports: reports.length,
         openReports: countBy(reports, (report) => stringValue(report.status, "open") === "open"),
         solvedReports: countBy(reports, (report) => stringValue(report.status) === "solved"),
+        totalReactions: reactions.length,
+        improveRequests: countBy(reactions, (reaction) => stringValue(reaction.reaction) === "improve"),
+        labVotes: labVotes.length,
         mostUsedModel: mostUsedModel(messages),
         mostActiveUser: mostActiveUser(messages),
         apiUsageEstimate: messages.reduce((total, message) => total + numberValue(message.tokensUsed), 0),
@@ -150,6 +165,8 @@ export async function GET(request: Request) {
           expired: countBy(payments, (payment) => payment.status === "expired"),
           refunded: countBy(payments, (payment) => payment.status === "refunded"),
         },
+        messageReactions: countsByField(reactions, "reaction"),
+        labVotes: countsByField(labVotes, "featureId"),
       },
       collections: {
         users,
@@ -157,6 +174,8 @@ export async function GET(request: Request) {
         messages,
         payments,
         reports,
+        reactions,
+        labVotes,
         models,
         logs,
       },

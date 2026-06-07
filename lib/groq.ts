@@ -1,3 +1,6 @@
+import { readFileSync } from "fs";
+import { join } from "path";
+
 export type GroqChatMessage = {
   role: "system" | "user" | "assistant";
   content: string;
@@ -17,6 +20,23 @@ type GroqChatResponse = {
 const groqChatUrl = "https://api.groq.com/openai/v1/chat/completions";
 const defaultGroqToolsModel = "llama-3.1-8b-instant";
 
+function readLocalEnvValue(name: string) {
+  try {
+    const file = readFileSync(join(process.cwd(), ".env.local"), "utf8");
+    const line = file
+      .split(/\r?\n/)
+      .find((entry) => entry.trim().startsWith(`${name}=`));
+    if (!line) return "";
+    return line.slice(line.indexOf("=") + 1).trim().replace(/^['"]|['"]$/g, "");
+  } catch {
+    return "";
+  }
+}
+
+function getServerEnvValue(name: string) {
+  return process.env[name] || readLocalEnvValue(name);
+}
+
 export async function generateGroqReply({
   messages,
   maxTokens = 1200,
@@ -26,8 +46,8 @@ export async function generateGroqReply({
   maxTokens?: number;
   temperature?: number;
 }) {
-  const apiKey = process.env.GROQ_API_KEY;
-  const model = process.env.GROQ_TOOLS_MODEL ?? defaultGroqToolsModel;
+  const apiKey = getServerEnvValue("GROQ_API_KEY");
+  const model = getServerEnvValue("GROQ_TOOLS_MODEL") || defaultGroqToolsModel;
 
   if (!apiKey) {
     return {

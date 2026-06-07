@@ -67,6 +67,7 @@ type SavedProfile = {
   lastLogin: Date | null;
   premiumUntil: Date | null;
   proUntil: Date | null;
+  planExpiresAt: Date | null;
 };
 
 const CHAT_STORAGE_KEY = "detox-ai-working-chats";
@@ -105,6 +106,7 @@ const defaultProfile: SavedProfile = {
   lastLogin: null,
   premiumUntil: null,
   proUntil: null,
+  planExpiresAt: null,
 };
 
 const responseStyles = [
@@ -155,6 +157,7 @@ function profileToLocalStorage(profile: SavedProfile) {
     lastLogin: toStorageDate(profile.lastLogin),
     premiumUntil: toStorageDate(profile.premiumUntil),
     proUntil: toStorageDate(profile.proUntil),
+    planExpiresAt: toStorageDate(profile.planExpiresAt),
   };
 }
 
@@ -204,6 +207,37 @@ function getPlanBadge(plan: PlanId, isCreator: boolean) {
   return {
     label: "Free Plan",
     className: "border-slate-300/20 bg-slate-400/10 text-slate-200",
+  };
+}
+
+function getAvatarGlow(plan: PlanId, isCreator: boolean) {
+  if (isCreator || plan === "creator") return "bg-gradient-to-br from-amber-200 via-violet-300 to-cyan-200 shadow-[0_0_58px_rgba(251,191,36,0.42)]";
+  if (plan === "ultimate") return "bg-[conic-gradient(from_0deg,#a855f7,#06b6d4,#22c55e,#f59e0b,#a855f7)] shadow-[0_0_54px_rgba(168,85,247,0.34)]";
+  if (plan === "premium") return "bg-gradient-to-br from-amber-200 via-yellow-400 to-orange-300 shadow-[0_0_52px_rgba(251,191,36,0.34)]";
+  if (plan === "pro") return "bg-gradient-to-br from-blue-300 via-blue-500 to-indigo-400 shadow-[0_0_48px_rgba(59,130,246,0.32)]";
+  if (plan === "go") return "bg-gradient-to-br from-cyan-200 via-cyan-400 to-teal-300 shadow-[0_0_44px_rgba(34,211,238,0.28)]";
+  if (plan === "lite") return "bg-gradient-to-br from-sky-300 to-blue-500 shadow-[0_0_38px_rgba(14,165,233,0.24)]";
+  return "bg-gradient-to-br from-slate-500 to-slate-300 shadow-[0_0_28px_rgba(148,163,184,0.18)]";
+}
+
+function planExpiryProgress(plan: PlanId, expiresAt: Date | null, isCreator: boolean) {
+  if (isCreator || plan === "creator") {
+    return { label: "Creator Active", detail: "Unlimited", progress: 100 };
+  }
+  if (plan === "free") {
+    return { label: "Free Active", detail: "No expiry", progress: 100 };
+  }
+  if (!expiresAt) {
+    return { label: `${plan[0].toUpperCase()}${plan.slice(1)} Active`, detail: "Expiry not set", progress: 100 };
+  }
+
+  const totalMs = 30 * 24 * 60 * 60 * 1000;
+  const remainingMs = Math.max(0, expiresAt.getTime() - Date.now());
+  const daysLeft = Math.ceil(remainingMs / (24 * 60 * 60 * 1000));
+  return {
+    label: `${plan[0].toUpperCase()}${plan.slice(1)} Active`,
+    detail: `${daysLeft} ${daysLeft === 1 ? "day" : "days"} left`,
+    progress: Math.max(0, Math.min(100, (remainingMs / totalMs) * 100)),
   };
 }
 
@@ -268,6 +302,7 @@ function createProfileFromFirestore(user: User, data: Record<string, unknown>): 
     lastLogin: asDate(data.lastLogin),
     premiumUntil: asDate(data.premiumUntil),
     proUntil: asDate(data.proUntil),
+    planExpiresAt: asDate(data.planExpiresAt),
   };
 }
 
@@ -285,6 +320,7 @@ function mergeLocalProfile(user: User) {
       lastLogin: asDate(parsed.lastLogin),
       premiumUntil: asDate(parsed.premiumUntil),
       proUntil: asDate(parsed.proUntil),
+      planExpiresAt: asDate(parsed.planExpiresAt),
     });
   } catch {
     return createProfileFromUser(user);
@@ -431,9 +467,11 @@ export function ProfileSettings() {
 
   const initials = useMemo(() => getInitials(profile.name, profile.email), [profile.name, profile.email]);
   const planBadge = getPlanBadge(profile.plan, profile.isCreator);
+  const avatarGlow = getAvatarGlow(profile.plan, profile.isCreator);
   const planLimits = PLAN_LIMITS[profile.plan] ?? PLAN_LIMITS.free;
   const defaultModel = DETOX_MODELS.find((model) => model.id === profile.defaultModel) ?? DETOX_MODELS[0];
-  const planExpiry = profile.premiumUntil ?? profile.proUntil;
+  const planExpiry = profile.planExpiresAt ?? profile.premiumUntil ?? profile.proUntil;
+  const expiry = planExpiryProgress(profile.plan, planExpiry, profile.isCreator);
   const avatarSource = removeAvatar ? "" : avatarPreview || profile.photoURL;
   const isDirty = JSON.stringify(profileToLocalStorage(profile)) !== JSON.stringify(profileToLocalStorage(lastSavedProfile)) || Boolean(avatarFile) || removeAvatar;
 
@@ -698,7 +736,7 @@ export function ProfileSettings() {
             <div className="relative flex flex-col items-center text-center">
               <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleAvatarChange} />
               <div className="relative">
-                <div className={`rounded-full p-1 ${profile.plan === "premium" || profile.plan === "creator" || profile.isCreator ? "bg-gradient-to-br from-amber-200 via-cyan-300 to-violet-400 shadow-[0_0_46px_rgba(6,182,212,0.28)]" : "bg-gradient-to-br from-cyan-300/70 to-violet-400/70"}`}>
+                <div className={`rounded-full p-1.5 ${avatarGlow}`}>
                   <div className="grid size-32 place-items-center overflow-hidden rounded-full border border-black/30 bg-[#020713] text-4xl font-semibold text-white">
                     {avatarSource ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -736,6 +774,27 @@ export function ProfileSettings() {
                     Unlimited Access
                   </span>
                 ) : null}
+              </div>
+
+              <div className="mt-5 flex w-full items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-left">
+                <div
+                  className="grid size-20 shrink-0 place-items-center rounded-full"
+                  style={{
+                    background: `conic-gradient(rgb(34 211 238) ${expiry.progress * 3.6}deg, rgb(30 41 59) 0deg)`,
+                  }}
+                  aria-label={`${expiry.label}, ${expiry.detail}`}
+                >
+                  <div className="grid size-[4.25rem] place-items-center rounded-full bg-[#07111f]">
+                    <Crown size={20} className="text-amber-100" />
+                  </div>
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-white">{expiry.label}</p>
+                  <p className="mt-1 text-sm text-cyan-100">{expiry.detail}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {planExpiry ? `Expires ${dateLabel(planExpiry)}` : "Plan status synced from your profile."}
+                  </p>
+                </div>
               </div>
 
               {avatarPreview ? (

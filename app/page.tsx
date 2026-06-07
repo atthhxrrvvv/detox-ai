@@ -16,7 +16,9 @@ import {
 import { AppLogo } from "@/components/AppLogo";
 import { AuthRedirect } from "@/components/AuthRedirect";
 import { Footer } from "@/components/Footer";
+import { FavoriteTools } from "@/components/FavoriteTools";
 import { Hero3DBackground } from "@/components/Hero3DBackground";
+import { LearningPaths } from "@/components/LearningPaths";
 import { ModelCard } from "@/components/ModelCard";
 import { PricingGrid } from "@/components/PricingGrid";
 import { SiteNav } from "@/components/SiteNav";
@@ -163,6 +165,10 @@ workspace.build({
             </div>
           </div>
         </section>
+
+        <FavoriteTools />
+
+        <LearningPaths />
 
         <section id="models" className="px-4 py-16 sm:px-6">
           <div className="mx-auto max-w-7xl">

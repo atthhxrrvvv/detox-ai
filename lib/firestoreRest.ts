@@ -128,6 +128,21 @@ export async function patchFirestoreDocument(
   return parseDocument(await response.json());
 }
 
+export async function createFirestoreDocument(
+  collectionName: string,
+  documentName: string,
+  idToken: string,
+  data: Record<string, unknown>,
+) {
+  const response = await firestoreFetch(`${documentUrl(collectionName)}?documentId=${encodeURIComponent(documentName)}`, idToken, {
+    method: "POST",
+    body: JSON.stringify({
+      fields: Object.fromEntries(Object.entries(data).map(([key, value]) => [key, valueToFirestore(value)])),
+    }),
+  });
+  return parseDocument(await response.json());
+}
+
 export function firestoreError(error: unknown) {
   return jsonError(error instanceof Error ? error.message : "Firestore request failed.", 500);
 }

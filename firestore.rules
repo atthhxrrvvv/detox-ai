@@ -6,56 +6,117 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
     function isCreator() {
       return signedIn() && request.auth.token.email == "cosmiceternal9481@gmail.com";
     }
 
+    function ownsExistingDoc() {
+      return signedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    function ownsIncomingDoc() {
+      return signedIn() && request.resource.data.userId == request.auth.uid;
+    }
+
+    function ownerFieldIsUnchanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(["userId"]);
+    }
+
     match /users/{uid} {
-      allow read, update: if signedIn() && (request.auth.uid == uid || isCreator());
-      allow create: if signedIn() && request.auth.uid == uid;
+      allow get, list: if isOwner(uid) || isCreator();
+      allow create: if isOwner(uid) && request.resource.data.uid == uid;
+      allow update: if (isOwner(uid) && request.resource.data.uid == uid) || isCreator();
+      allow delete: if isOwner(uid) || isCreator();
     }
 
     match /chats/{chatId} {
-      allow read, update, delete: if signedIn() && (resource.data.userId == request.auth.uid || isCreator());
-      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow get, list: if ownsExistingDoc() || isCreator();
+      allow create: if ownsIncomingDoc()
+        && request.resource.data.chatId == chatId
+        && request.resource.data.isDeleted == false;
+      allow update: if isCreator() || (ownsExistingDoc() && ownerFieldIsUnchanged());
+      allow delete: if ownsExistingDoc() || isCreator();
     }
 
     match /messages/{messageId} {
-      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isCreator());
-      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
-      allow update: if signedIn() && (resource.data.userId == request.auth.uid || isCreator());
-      allow delete: if isCreator();
+      allow get, list: if ownsExistingDoc() || isCreator();
+      allow create: if ownsIncomingDoc()
+        && request.resource.data.messageId == messageId
+        && request.resource.data.chatId is string
+        && request.resource.data.role in ["user", "assistant"]
+        && request.resource.data.content is string;
+      allow update: if isCreator() || (ownsExistingDoc() && ownerFieldIsUnchanged());
+      allow delete: if ownsExistingDoc() || isCreator();
     }
 
     match /payments/{paymentId} {
-      allow read: if signedIn() && resource.data.userId == request.auth.uid;
-      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
-      allow read, update: if isCreator();
+      allow get, list: if ownsExistingDoc() || isCreator();
+      allow create: if ownsIncomingDoc();
+      allow update, delete: if isCreator();
+    }
+
+    match /promo_redemptions/{redemptionId} {
+      allow get, list: if ownsExistingDoc() || isCreator();
+      allow create: if ownsIncomingDoc()
+        && request.resource.data.redemptionId == redemptionId
+        && request.resource.data.code is string
+        && request.resource.data.plan in ["lite", "go", "pro", "premium", "ultimate"]
+        && request.resource.data.status == "redeemed";
+      allow update, delete: if isCreator();
     }
 
     match /reports/{reportId} {
       allow create: if signedIn();
-      allow read, update: if isCreator();
+      allow get, list, update, delete: if isCreator();
+    }
+
+    match /revision_reminders/{reminderId} {
+      allow get, list: if ownsExistingDoc() || isCreator();
+      allow create: if ownsIncomingDoc();
+      allow update: if isCreator() || (ownsExistingDoc() && ownerFieldIsUnchanged());
+      allow delete: if ownsExistingDoc() || isCreator();
+    }
+
+    match /message_reactions/{reactionId} {
+      allow get, list: if ownsExistingDoc() || isCreator();
+      allow create: if ownsIncomingDoc();
+      allow update: if isCreator() || (ownsExistingDoc() && ownerFieldIsUnchanged());
+      allow delete: if ownsExistingDoc() || isCreator();
+    }
+
+    match /lab_votes/{voteId} {
+      allow get, list: if ownsExistingDoc() || isCreator();
+      allow create: if ownsIncomingDoc();
+      allow update: if isCreator() || (ownsExistingDoc() && ownerFieldIsUnchanged());
+      allow delete: if ownsExistingDoc() || isCreator();
     }
 
     match /plans/{planId} {
-      allow read: if true;
-      allow write: if isCreator();
+      allow get, list: if true;
+      allow create, update, delete: if isCreator();
     }
 
     match /models/{modelId} {
-      allow read: if true;
-      allow write: if isCreator();
+      allow get, list: if true;
+      allow create, update, delete: if isCreator();
     }
 
     match /admin_logs/{logId} {
-      allow read, create, update: if isCreator();
+      allow get, list, create, update: if isCreator();
       allow delete: if false;
     }
 
     match /app_settings/{settingId} {
-      allow read: if true;
-      allow write: if isCreator();
+      allow get, list: if true;
+      allow create, update, delete: if isCreator();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

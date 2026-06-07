@@ -8,6 +8,28 @@ import { DETOX_OWNER_RESPONSE, isOwnerQuestion } from "@/lib/ownerResponse";
 import { db } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
 
+export const maxDuration = 300;
+
+const minimumReplyDelayMs = 10000;
+const maximumReplyDelayMs = 300000;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function timeoutAfter(ms: number) {
+  return new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error("Detox AI response took longer than 5 minutes. Try again with a shorter message.")), ms);
+  });
+}
+
+async function waitForMinimumReplyDelay(startedAt: number) {
+  const remainingDelay = minimumReplyDelayMs - (Date.now() - startedAt);
+  if (remainingDelay > 0) {
+    await sleep(remainingDelay);
+  }
+}
+
 async function getAppControlState() {
   try {
     const snapshot = await getDoc(doc(db, "app_settings", "global"));
@@ -27,11 +49,27 @@ async function getAppControlState() {
 async function getUserBlockState(uid: string) {
   try {
     const snapshot = await getDoc(doc(db, "users", uid));
-    const data = snapshot.data() as { isBanned?: boolean; blockedPermanently?: boolean; plan?: string } | undefined;
+    const data = snapshot.data() as {
+      isBanned?: boolean;
+      blockedPermanently?: boolean;
+      plan?: string;
+      planExpiresAt?: string;
+      planStatus?: string;
+    } | undefined;
+
+    // Server-side plan expiration check — never trust an expired plan
+    let plan = data?.plan;
+    if (plan && plan !== "free" && plan !== "creator" && data?.planExpiresAt) {
+      const expiresAt = new Date(data.planExpiresAt);
+      if (!Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= Date.now()) {
+        plan = "free";
+      }
+    }
+
     return {
       isBanned: Boolean(data?.isBanned),
       blockedPermanently: Boolean(data?.blockedPermanently),
-      plan: data?.plan,
+      plan,
     };
   } catch {
     return {
@@ -42,7 +80,17 @@ async function getUserBlockState(uid: string) {
   }
 }
 
+function normalizeServerPlan(value: unknown): AccessUser["plan"] | undefined {
+  const plan = String(value ?? "");
+  if (["free", "lite", "go", "pro", "premium", "ultimate", "creator", "banned"].includes(plan)) {
+    return plan as AccessUser["plan"];
+  }
+  return undefined;
+}
+
 export async function POST(request: Request) {
+  const startedAt = Date.now();
+
   try {
     const body = await request.json();
     const verifiedUser = await verifyFirebaseIdToken(String(body.idToken ?? ""));
@@ -79,7 +127,9 @@ export async function POST(request: Request) {
       dailyMessages: requestedUser.dailyMessages ?? 0,
       monthlyMessages: requestedUser.monthlyMessages ?? 0,
       email: verifiedUser.email,
-      plan: isCreator(verifiedUser.email) ? "creator" : blockState.plan === "banned" ? "banned" : requestedUser.plan ?? "free",
+      plan: isCreator(verifiedUser.email)
+        ? "creator"
+        : normalizeServerPlan(blockState.plan) ?? requestedUser.plan ?? "free",
       isBanned: blockState.isBanned || blockState.blockedPermanently,
     } satisfies AccessUser;
 
@@ -106,6 +156,7 @@ export async function POST(request: Request) {
     }
 
     if (isOwnerQuestion(message)) {
+      await waitForMinimumReplyDelay(startedAt);
       return Response.json({
         reply: DETOX_OWNER_RESPONSE,
         modelId,
@@ -120,7 +171,11 @@ export async function POST(request: Request) {
       ? `${message}\n\nResearch mode is on. Give a more careful, source-aware answer. If the answer depends on live web data, clearly say that live browsing is not connected in this Detox AI build and explain what should be verified.`
       : message;
 
-    const reply = await generateMistralReply(modelId, effectiveMessage, history, modelTemperature);
+    const reply = await Promise.race([
+      generateMistralReply(modelId, effectiveMessage, history, modelTemperature),
+      timeoutAfter(maximumReplyDelayMs),
+    ]);
+    await waitForMinimumReplyDelay(startedAt);
 
     return Response.json({
       reply: reply.content,

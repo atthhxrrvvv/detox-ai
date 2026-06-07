@@ -19,6 +19,7 @@ import {
   Menu,
   Megaphone,
   MessageSquare,
+  MoreHorizontal,
   RefreshCw,
   Search,
   Settings,
@@ -41,6 +42,8 @@ type CreatorStats = {
     planCounts: Record<string, number>;
     revenueByPlan: Record<string, number>;
     paymentStatus: Record<string, number>;
+    messageReactions: Record<string, number>;
+    labVotes: Record<string, number>;
   };
   collections: {
     users: CreatorRecord[];
@@ -48,6 +51,8 @@ type CreatorStats = {
     messages: CreatorRecord[];
     payments: CreatorRecord[];
     reports: CreatorRecord[];
+    reactions: CreatorRecord[];
+    labVotes: CreatorRecord[];
     models: CreatorRecord[];
     logs: CreatorRecord[];
   };
@@ -94,9 +99,26 @@ const navItems = [
 const paidPlans = ["lite", "go", "pro", "premium", "ultimate"] as const;
 const maxCreatorFailedAttempts = 5;
 
-const primaryMobileSections = ["overview", "users", "payments", "revenue", "logs"] as const;
+const primaryMobileSections = ["overview", "users", "payments", "reports", "revenue", "logs"] as const;
+
+const creatorPlanActions = [
+  { label: "Free", plan: "free", tone: "neutral" },
+  { label: "Lite", plan: "lite", tone: "primary" },
+  { label: "Plus", plan: "go", tone: "primary" },
+  { label: "Pro", plan: "pro", tone: "primary" },
+  { label: "Premium", plan: "premium", tone: "success" },
+  { label: "Ultimate", plan: "ultimate", tone: "success" },
+] as const satisfies ReadonlyArray<{
+  label: string;
+  plan: string;
+  tone: "neutral" | "primary" | "success";
+}>;
 
 function asString(value: unknown, fallback = "No data yet") {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function stringValue(value: unknown, fallback = "") {
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
@@ -140,6 +162,13 @@ function formatDate(value: unknown) {
     month: "short",
     year: "numeric",
   }).format(date);
+}
+
+function reportTypeLabel(value: unknown) {
+  const type = stringValue(value, "bug");
+  if (type === "feature") return "Feature Suggestion";
+  if (type === "payment") return "Payment Issue";
+  return "Bug Report";
 }
 
 function lockLabel(lock?: LockState | null) {
@@ -211,6 +240,109 @@ function Field({ label, value }: { label: string; value: unknown }) {
     <div className="rounded-xl border border-white/10 bg-white/[0.035] p-3">
       <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">{label}</p>
       <p className="mt-2 break-words text-sm font-semibold text-white">{String(value ?? "Not set")}</p>
+    </div>
+  );
+}
+
+function ProfileValue({ label, value }: { label: string; value: unknown }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.035] p-3">
+      <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      <p className="mt-1 break-words text-sm font-semibold text-slate-100">{String(value ?? "Not set") || "Not set"}</p>
+    </div>
+  );
+}
+
+function UserProfileDrawer({ user, onClose }: { user: CreatorRecord | null; onClose: () => void }) {
+  if (!user) return null;
+
+  const socials = typeof user.socialLinks === "object" && user.socialLinks !== null
+    ? user.socialLinks as Record<string, unknown>
+    : {};
+  const avatarUrl = stringValue(user.photoURL);
+
+  return (
+    <div className="fixed inset-0 z-50">
+      <button
+        type="button"
+        aria-label="Close user profile"
+        className="absolute inset-0 bg-black/65 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <aside className="detox-scrollbar absolute right-0 top-0 h-full w-[min(34rem,92vw)] overflow-y-auto border-l border-white/10 bg-[#050b18] p-5 text-white shadow-[-24px_0_90px_rgba(0,0,0,0.46)]">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-2xl border border-cyan-300/20 bg-cyan-300/10 text-lg font-semibold text-cyan-100">
+              {avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+              ) : (
+                asString(user.name, asString(user.email, "DU")).slice(0, 2).toUpperCase()
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-xl font-semibold">{asString(user.name, "Detox User")}</p>
+              <p className="truncate text-sm text-slate-400">{asString(user.email)}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="grid size-10 shrink-0 place-items-center rounded-xl border border-white/10 text-slate-300 hover:bg-white/8 hover:text-white"
+            aria-label="Close user profile"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <ProfileValue label="Plan" value={asString(user.plan, "free")} />
+          <ProfileValue label="Status" value={user.isBanned ? "Banned" : asString(user.planStatus, "active")} />
+          <ProfileValue label="Username" value={asString(user.username)} />
+          <ProfileValue label="Role" value={asString(user.role)} />
+          <ProfileValue label="Occupation" value={asString(user.occupation)} />
+          <ProfileValue label="Language" value={asString(user.language)} />
+        </div>
+
+        <div className="mt-3 grid gap-3">
+          <ProfileValue label="Bio" value={asString(user.bio)} />
+          <ProfileValue label="Response Style" value={asString(user.responseStyle ?? user.tone)} />
+          <ProfileValue label="Default Theme" value={asString(user.defaultTheme)} />
+          <ProfileValue label="Default Model" value={asString(user.defaultModel)} />
+        </div>
+
+        <div className="mt-5">
+          <p className="text-sm font-semibold text-white">Social links</p>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <ProfileValue label="Instagram" value={asString(socials.instagram)} />
+            <ProfileValue label="YouTube" value={asString(socials.youtube)} />
+            <ProfileValue label="GitHub" value={asString(socials.github)} />
+            <ProfileValue label="Website" value={asString(socials.website)} />
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <p className="text-sm font-semibold text-white">Usage and dates</p>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <ProfileValue label="Daily Messages" value={formatNumber(user.dailyMessages)} />
+            <ProfileValue label="Monthly Messages" value={formatNumber(user.monthlyMessages)} />
+            <ProfileValue label="Total Messages" value={formatNumber(user.totalMessages)} />
+            <ProfileValue label="Tokens Used" value={formatNumber(user.tokensUsed)} />
+            <ProfileValue label="Created" value={formatDate(user.createdAt)} />
+            <ProfileValue label="Updated" value={formatDate(user.updatedAt)} />
+            <ProfileValue label="Last Login" value={formatDate(user.lastLogin)} />
+            <ProfileValue label="Plan Expires" value={formatDate(user.planExpiresAt)} />
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Account IDs</p>
+          <div className="mt-3 grid gap-2 text-xs text-slate-400">
+            <p className="break-all">UID: {user.id}</p>
+            <p className="break-all">Photo URL: {avatarUrl || "Not set"}</p>
+          </div>
+        </div>
+      </aside>
     </div>
   );
 }
@@ -300,6 +432,124 @@ function DataTable({
   );
 }
 
+function ChatTranscriptPanel({
+  chats,
+  messages,
+  selectedChatId,
+  onSelectChat,
+}: {
+  chats: CreatorRecord[];
+  messages: CreatorRecord[];
+  selectedChatId: string;
+  onSelectChat: (chatId: string) => void;
+}) {
+  const selectedChat = chats.find((chat) => stringValue(chat.chatId, chat.id) === selectedChatId) ?? chats[0];
+  const selectedId = selectedChat ? stringValue(selectedChat.chatId, selectedChat.id) : "";
+  const selectedMessages = useMemo(
+    () =>
+      messages
+        .filter((message) => stringValue(message.chatId) === selectedId)
+        .sort((left, right) => new Date(toIsoDate(left.createdAt)).getTime() - new Date(toIsoDate(right.createdAt)).getTime()),
+    [messages, selectedId],
+  );
+
+  return (
+    <section className="rounded-2xl border border-white/10 bg-[#091221]/88 p-4 shadow-[0_22px_80px_rgba(0,0,0,0.22)] sm:p-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="font-semibold text-white">Chat moderation</h3>
+          <p className="mt-1 text-sm text-slate-400">Open a user chat to review the full user and AI conversation.</p>
+        </div>
+        <span className="w-fit rounded-full border border-white/10 bg-white/[0.035] px-2.5 py-1 text-xs font-semibold text-slate-400">
+          {formatNumber(chats.length)} chats
+        </span>
+      </div>
+
+      {chats.length ? (
+        <div className="mt-5 grid min-h-[560px] gap-4 xl:grid-cols-[360px_1fr]">
+          <div className="detox-scrollbar max-h-[620px] overflow-y-auto rounded-2xl border border-white/10 bg-black/20 p-2">
+            {chats.map((chat) => {
+              const chatId = stringValue(chat.chatId, chat.id);
+              const isActive = chatId === selectedId;
+              return (
+                <button
+                  key={chat.id}
+                  type="button"
+                  onClick={() => onSelectChat(chatId)}
+                  className={`mb-2 w-full rounded-xl border p-3 text-left transition ${
+                    isActive ? "border-cyan-300/30 bg-cyan-300/12" : "border-white/8 bg-white/[0.025] hover:bg-white/[0.05]"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-white">{asString(chat.title, "New Chat")}</p>
+                      <p className="mt-1 truncate text-xs text-slate-400">{asString(chat.userEmail, "Unknown user")}</p>
+                    </div>
+                    <span className="shrink-0 rounded-lg border border-white/10 px-2 py-1 text-[11px] text-slate-400">
+                      {formatNumber(chat.messageCount)}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                    <span>{asString(chat.modelId, "model")}</span>
+                    <span>{formatDate(chat.updatedAt)}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex min-h-0 flex-col rounded-2xl border border-white/10 bg-[#020713]/70">
+            {selectedChat ? (
+              <>
+                <div className="border-b border-white/10 p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-cyan-200">Selected chat</p>
+                  <h4 className="mt-2 text-xl font-semibold text-white">{asString(selectedChat.title, "New Chat")}</h4>
+                  <div className="mt-3 grid gap-2 text-sm text-slate-400 md:grid-cols-3">
+                    <span className="truncate">User: {asString(selectedChat.userEmail, "Unknown")}</span>
+                    <span>Model: {asString(selectedChat.modelId, "Unknown")}</span>
+                    <span>Updated: {formatDate(selectedChat.updatedAt)}</span>
+                  </div>
+                </div>
+
+                <div className="detox-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+                  {selectedMessages.length ? (
+                    selectedMessages.map((message) => {
+                      const isUser = stringValue(message.role) === "user";
+                      const content = asString(message.content, "Empty message");
+                      return (
+                        <article key={message.id} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+                          <div className={`max-w-[92%] rounded-2xl border p-3 text-sm leading-6 ${
+                            isUser
+                              ? "border-blue-300/20 bg-blue-500/15 text-blue-50"
+                              : "border-white/10 bg-white/[0.045] text-slate-100"
+                          }`}
+                          >
+                            <div className="mb-2 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+                              <span className="font-semibold text-slate-300">{isUser ? "User" : "Detox AI"}</span>
+                              <span>{formatDate(message.createdAt)}</span>
+                            </div>
+                            <p className="whitespace-pre-wrap break-words">{content}</p>
+                          </div>
+                        </article>
+                      );
+                    })
+                  ) : (
+                    <EmptyState label="No messages saved for this chat yet." />
+                  )}
+                </div>
+              </>
+            ) : (
+              <EmptyState label="Select a chat to review messages." />
+            )}
+          </div>
+        </div>
+      ) : (
+        <EmptyState label="No chats yet." />
+      )}
+    </section>
+  );
+}
+
 function CreatorNav({ activeSection, onNavigate }: { activeSection: string; onNavigate?: () => void }) {
   return (
     <nav className="grid gap-1">
@@ -338,6 +588,8 @@ export function CreatorDashboard({ section }: { section: string }) {
   const [busyAction, setBusyAction] = useState("");
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [selectedCreatorChatId, setSelectedCreatorChatId] = useState("");
+  const [selectedUserProfile, setSelectedUserProfile] = useState<CreatorRecord | null>(null);
 
   useEffect(() => {
     fetch("/api/creator/session")
@@ -482,6 +734,28 @@ export function CreatorDashboard({ section }: { section: string }) {
     );
   }, [query, stats?.collections.users]);
 
+  const filteredChats = useMemo(() => {
+    const chats = stats?.collections.chats ?? [];
+    const search = query.trim().toLowerCase();
+    if (!search) return chats;
+    return chats.filter((chat) =>
+      [chat.title, chat.userEmail, chat.modelId, chat.chatId, chat.id].some((value) =>
+        String(value ?? "").toLowerCase().includes(search),
+      ),
+    );
+  }, [query, stats?.collections.chats]);
+
+  const filteredReports = useMemo(() => {
+    const reports = stats?.collections.reports ?? [];
+    const search = query.trim().toLowerCase();
+    if (!search) return reports;
+    return reports.filter((report) =>
+      [report.type, report.reason, report.title, report.details, report.userEmail, report.page, report.status, report.priority].some((value) =>
+        String(value ?? "").toLowerCase().includes(search),
+      ),
+    );
+  }, [query, stats?.collections.reports]);
+
   function isActionRunning(endpoint: string, body: Record<string, unknown>) {
     return busyAction === `${endpoint}:${JSON.stringify(body)}`;
   }
@@ -621,6 +895,7 @@ export function CreatorDashboard({ section }: { section: string }) {
 
   return (
     <div className="min-h-screen bg-[#020713] text-white">
+      <UserProfileDrawer user={selectedUserProfile} onClose={() => setSelectedUserProfile(null)} />
       <div className="fixed inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(6,182,212,0.12),transparent_28%),radial-gradient(circle_at_80%_0%,rgba(139,92,246,0.13),transparent_24%)]" />
       {isMobileNavOpen ? (
         <div className="fixed inset-0 z-50 lg:hidden">
@@ -768,6 +1043,8 @@ export function CreatorDashboard({ section }: { section: string }) {
                   <MiniBarChart title="Plan distribution" values={stats?.charts.planCounts ?? {}} />
                   <MiniBarChart title="Revenue by plan" values={stats?.charts.revenueByPlan ?? {}} />
                   <MiniBarChart title="Payment status" values={stats?.charts.paymentStatus ?? {}} />
+                  <MiniBarChart title="AI reply reactions" values={stats?.charts.messageReactions ?? {}} />
+                  <MiniBarChart title="Detox Labs votes" values={stats?.charts.labVotes ?? {}} />
                 </div>
                 {!stats || asNumber(summary.totalUsers) + asNumber(summary.totalMessages) + asNumber(summary.totalRevenue) === 0 ? <EmptyState /> : null}
               </div>
@@ -786,34 +1063,51 @@ export function CreatorDashboard({ section }: { section: string }) {
                   ["Expires", (row) => formatDate(row.planExpiresAt)],
                   ["Usage", (row) => `${formatNumber(row.dailyMessages)} today / ${formatNumber(row.monthlyMessages)} month`],
                   ["Actions", (row) => {
-                    const freeBody = { uid: row.id, plan: "free" };
-                    const premiumBody = { uid: row.id, plan: "premium" };
                     const accessBody = { uid: row.id };
                     const accessEndpoint = row.isBanned ? "/api/creator/user/unban" : "/api/creator/user/ban";
 
                     return (
-                      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                        <CreatorActionButton
-                          disabled={isActionRunning("/api/creator/user/update-plan", freeBody)}
-                          onClick={() => creatorAction("/api/creator/user/update-plan", freeBody, "User moved to Free plan.")}
-                        >
-                          Free
-                        </CreatorActionButton>
-                        <CreatorActionButton
-                          tone="primary"
-                          disabled={isActionRunning("/api/creator/user/update-plan", premiumBody)}
-                          onClick={() => creatorAction("/api/creator/user/update-plan", premiumBody, "User moved to Premium for 30 days.")}
-                        >
-                          Premium
-                        </CreatorActionButton>
-                        <CreatorActionButton
-                          tone={row.isBanned ? "success" : "danger"}
-                          className="col-span-2 sm:col-span-1"
-                          disabled={isActionRunning(accessEndpoint, accessBody)}
-                          onClick={() => creatorAction(accessEndpoint, accessBody, row.isBanned ? "User unbanned." : "User banned.")}
-                        >
-                          {row.isBanned ? "Unban" : "Ban"}
-                        </CreatorActionButton>
+                      <div className="grid min-w-[260px] grid-cols-3 gap-2 xl:min-w-[360px] xl:grid-cols-6">
+                        {creatorPlanActions.map((action) => {
+                          const body = { uid: row.id, plan: action.plan };
+                          const isCurrentPlan = stringValue(row.plan, "free") === action.plan;
+
+                          return (
+                            <CreatorActionButton
+                              key={action.plan}
+                              tone={isCurrentPlan ? "success" : action.tone}
+                              disabled={isActionRunning("/api/creator/user/update-plan", body)}
+                              onClick={() =>
+                                creatorAction(
+                                  "/api/creator/user/update-plan",
+                                  body,
+                                  `User moved to ${action.label} plan${action.plan === "free" ? "." : " for 30 days."}`,
+                                )
+                              }
+                              className={isCurrentPlan ? "ring-1 ring-emerald-200/40" : ""}
+                            >
+                              {action.label}
+                            </CreatorActionButton>
+                          );
+                        })}
+                        <div className="col-span-3 grid grid-cols-[1fr_44px] gap-2 xl:col-span-6">
+                          <CreatorActionButton
+                            tone={row.isBanned ? "success" : "danger"}
+                            disabled={isActionRunning(accessEndpoint, accessBody)}
+                            onClick={() => creatorAction(accessEndpoint, accessBody, row.isBanned ? "User unbanned." : "User banned.")}
+                          >
+                            {row.isBanned ? "Unban" : "Ban"}
+                          </CreatorActionButton>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedUserProfile(row)}
+                            className="grid min-h-9 place-items-center rounded-lg border border-white/10 bg-white/[0.035] text-slate-200 transition hover:bg-white/8 hover:text-white"
+                            aria-label={`Open profile for ${asString(row.email, "user")}`}
+                            title="View edited profile and more"
+                          >
+                            <MoreHorizontal size={17} />
+                          </button>
+                        </div>
                       </div>
                     );
                   }],
@@ -903,31 +1197,27 @@ export function CreatorDashboard({ section }: { section: string }) {
             ) : null}
 
             {activeSection === "chats" ? (
-              <DataTable
-                title="Chat moderation"
-                rows={stats?.collections.chats ?? []}
-                empty="No chats yet."
-                columns={[
-                  ["Title", (row) => asString(row.title)],
-                  ["User", (row) => asString(row.userEmail)],
-                  ["Model", (row) => asString(row.modelId)],
-                  ["Messages", (row) => formatNumber(row.messageCount)],
-                  ["Reported", (row) => String(Boolean(row.isReported))],
-                  ["Updated", (row) => formatDate(row.updatedAt)],
-                ]}
+              <ChatTranscriptPanel
+                chats={filteredChats}
+                messages={stats?.collections.messages ?? []}
+                selectedChatId={selectedCreatorChatId}
+                onSelectChat={setSelectedCreatorChatId}
               />
             ) : null}
 
             {activeSection === "reports" ? (
               <DataTable
-                title="Reports"
-                rows={stats?.collections.reports ?? []}
+                title="Reports, feature suggestions, and payment issues"
+                rows={filteredReports}
                 empty="No reports yet."
                 columns={[
+                  ["Type", (row) => reportTypeLabel(row.type ?? row.reason)],
+                  ["Title", (row) => asString(row.title, asString(row.reason))],
                   ["User", (row) => asString(row.userEmail)],
-                  ["Reason", (row) => asString(row.reason)],
-                  ["Status", (row) => asString(row.status, "open")],
                   ["Details", (row) => asString(row.details, "-")],
+                  ["Page", (row) => row.page ? <a className="text-cyan-100 underline" href={String(row.page)} target="_blank">Open page</a> : "-"],
+                  ["Priority", (row) => <span className="capitalize">{asString(row.priority, "normal")}</span>],
+                  ["Status", (row) => <span className="capitalize">{asString(row.status, "open")}</span>],
                   ["Created", (row) => formatDate(row.createdAt)],
                 ]}
               />

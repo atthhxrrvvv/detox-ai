@@ -20,9 +20,11 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
+  Star,
   Video,
   X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 
@@ -35,8 +37,19 @@ type ToolState = {
 };
 
 const savedToolsKey = "detox-ai-tool-outputs";
+const favoriteToolsKey = "detox-ai-favorite-tools";
 
-const tools = [
+type ToolDefinition = {
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  access: string;
+  placeholder: string;
+  sample: string;
+  prompt: string;
+};
+
+const tools: readonly ToolDefinition[] = [
   {
     title: "AI Code Debugger",
     description: "Find bugs, explain fixes, and improve full-stack code.",
@@ -149,6 +162,17 @@ const tools = [
   },
 ] as const;
 
+function getRequestedToolTitle() {
+  if (typeof window === "undefined") return tools[0].title;
+  const requestedTool = new URLSearchParams(window.location.search).get("tool")?.toLowerCase();
+  if (!requestedTool) return tools[0].title;
+  return (
+    tools.find((tool) =>
+      [tool.title, tool.title.replace(/^AI\s+/i, "")].some((value) => value.toLowerCase() === requestedTool),
+    )?.title ?? tools[0].title
+  );
+}
+
 function createInitialState() {
   return tools.reduce<Record<string, ToolState>>((state, tool) => {
     state[tool.title] = {
@@ -162,12 +186,24 @@ function createInitialState() {
   }, {});
 }
 
+function loadFavoriteToolTitles() {
+  if (typeof window === "undefined") return [] as string[];
+
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(favoriteToolsKey) ?? "[]") as unknown[];
+    return stored.filter((title): title is string => typeof title === "string");
+  } catch {
+    return [];
+  }
+}
+
 export function ToolGrid() {
   const [toolState, setToolState] = useState(createInitialState);
+  const [favoriteTools, setFavoriteTools] = useState<string[]>(loadFavoriteToolTitles);
   const [notice, setNotice] = useState("");
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
-  const [activeToolTitle, setActiveToolTitle] = useState<string>(tools[0].title);
+  const [activeToolTitle, setActiveToolTitle] = useState<string>(getRequestedToolTitle);
   const [toolQuery, setToolQuery] = useState("");
   const totalGenerated = useMemo(
     () => Object.values(toolState).filter((item) => item.output).length,
@@ -191,6 +227,12 @@ export function ToolGrid() {
     });
   }, []);
 
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("tool")) {
+      window.setTimeout(() => document.getElementById("tool-workspace")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+    }
+  }, []);
+
   function updateTool(title: string, patch: Partial<ToolState>) {
     setToolState((current) => ({
       ...current,
@@ -210,6 +252,17 @@ export function ToolGrid() {
     setActiveToolTitle(title);
     const element = document.getElementById("tool-workspace");
     element?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function toggleFavoriteTool(title: string) {
+    setFavoriteTools((current) => {
+      const next = current.includes(title)
+        ? current.filter((item) => item !== title)
+        : [title, ...current];
+      window.localStorage.setItem(favoriteToolsKey, JSON.stringify(next));
+      flashNotice(next.includes(title) ? "Added to favorites." : "Removed from favorites.");
+      return next;
+    });
   }
 
   async function generateTool(title: string, prompt: string) {
@@ -303,7 +356,7 @@ export function ToolGrid() {
       <div className="mb-5 overflow-hidden rounded-2xl border border-cyan-300/15 bg-[radial-gradient(circle_at_18%_0%,rgba(6,182,212,0.18),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.9),rgba(2,7,19,0.94))] shadow-[0_24px_90px_rgba(0,0,0,0.24)] sm:rounded-3xl">
         <div className="grid gap-4 p-4 sm:grid-cols-[1.1fr_0.9fr] sm:p-5 lg:grid-cols-[1.15fr_0.85fr_0.85fr]">
           <div>
-            <p className="text-xs uppercase tracking-[0.22em] text-cyan-200">Groq Tool Engine</p>
+            <p className="text-xs uppercase tracking-[0.22em] text-cyan-200">AI Tool Engine</p>
             <p className="mt-2 text-2xl font-semibold text-white sm:text-3xl">Mobile AI workspace</p>
             <p className="mt-2 max-w-xl text-sm leading-6 text-slate-400">
               Pick one tool, add context, generate, copy, and save from a phone-friendly workspace.
@@ -380,10 +433,11 @@ export function ToolGrid() {
 
       <div id="tool-workspace" className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {visibleTools.map((tool) => {
-          const Icon = tool.icon;
-          const state = toolState[tool.title];
-          const isActiveOnPhone = activeTool.title === tool.title;
-          return (
+            const Icon = tool.icon;
+            const state = toolState[tool.title];
+            const isActiveOnPhone = activeTool.title === tool.title;
+            const isFavorite = favoriteTools.includes(tool.title);
+            return (
             <article
               key={tool.title}
               className={`group relative overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(9,18,33,0.94),rgba(3,7,18,0.92))] p-4 shadow-[0_20px_70px_rgba(0,0,0,0.22)] sm:p-5 ${
@@ -395,9 +449,24 @@ export function ToolGrid() {
                 <span className="grid size-11 place-items-center rounded-xl border border-cyan-300/15 bg-cyan-300/10 text-cyan-100 shadow-[0_0_30px_rgba(6,182,212,0.12)]">
                   <Icon size={20} />
                 </span>
-                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-slate-300">
-                  {tool.access}
-                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleFavoriteTool(tool.title)}
+                    className={`grid size-9 place-items-center rounded-xl border transition ${
+                      isFavorite
+                        ? "border-amber-300/35 bg-amber-300/15 text-amber-100"
+                        : "border-white/10 bg-white/5 text-slate-400 hover:text-white"
+                    }`}
+                    aria-label={isFavorite ? `Remove ${tool.title} from favorites` : `Add ${tool.title} to favorites`}
+                    title={isFavorite ? "Remove favorite" : "Add favorite"}
+                  >
+                    <Star size={16} fill={isFavorite ? "currentColor" : "none"} />
+                  </button>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-slate-300">
+                    {tool.access}
+                  </span>
+                </div>
               </div>
 
               <h3 className="mt-4 text-lg font-semibold text-white">{tool.title}</h3>
